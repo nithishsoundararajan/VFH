@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { PerformanceMonitor } from '../../../../lib/config/monitoring'
+import { getMonitoringConfig } from '@/lib/config/monitoring'
 
 export async function GET() {
   const startTime = Date.now()
@@ -45,7 +45,10 @@ export async function GET() {
     const responseTime = Date.now() - startTime
     
     // Track performance
-    PerformanceMonitor.track('storage_health_check', responseTime, { type: 'comprehensive' })
+    const config = getMonitoringConfig()
+    if (config.storage.enabled && responseTime > config.storage.timeout) {
+      console.warn(`Storage health check took ${responseTime}ms, exceeding timeout of ${config.storage.timeout}ms`)
+    }
     
     const hasErrors = bucketsError || Object.values(bucketChecks).some((check: any) => check.status === 'unhealthy')
     const hasDegraded = Object.values(bucketChecks).some((check: any) => check.status === 'degraded')

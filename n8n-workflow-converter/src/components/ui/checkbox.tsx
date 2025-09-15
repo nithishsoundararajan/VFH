@@ -1,30 +1,30 @@
-eckbox } Chrt {
-expoName
-isplayot.de.RoimitivCheckboxPr= e Namlaydispheckbox.t>
-))
-Ctive.RooimiboxPr  </Checkcator>
-ve.IndiboxPrimitiCheck</4" />
-    ="h-4 w-sNameCheck clas    <
-    >
-  ")}currentcenter text-er justify-s-cent itemcn("flexlassName={or
-      cattive.IndicmickboxPriChe    <}
+"use client"
+
+import * as React from "react"
+import * as CheckboxPrimitive from "@radix-ui/react-checkbox"
+import { Check } from "lucide-react"
+
+import { cn } from "@/lib/utils"
+
+const Checkbox = React.forwardRef<
+  React.ElementRef<typeof CheckboxPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
+>(({ className, ...props }, ref) => (
+  <CheckboxPrimitive.Root
+    ref={ref}
+    className={cn(
+      "peer h-4 w-4 shrink-0 rounded-sm border border-primary ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+      className
+    )}
+    {...props}
   >
-{...props}
-        )Name
-     class",
- -foregroundrytext-primachecked]:tate=ata-[sg-primary decked]:bta-[state=chpacity-50 dasabled:oowed di-all:cursor-notsabled2 diffset-le:ring-ovisibing focus-le:ring-r focus-visibble:ring-2-visione focus:outline-ncus-visiblend fogrout-backring-offseer-primary ordsm border bunded-rink-0 ro h-4 w-4 sheer  "pn(
-    ={c   className={ref}
- ref   
- Roottive.rimi<CheckboxP(
-   => ef), rprops }ssName, ...la
->(({ c.Root>PrimitiveckboxCheeof outRef<typentPropsWitheact.ComponRoot>,
-  Rrimitive.of CheckboxPntRef<type React.ElemewardRef<
- .forctx = Reat Checkboconss"
+    <CheckboxPrimitive.Indicator
+      className={cn("flex items-center justify-center text-current")}
+    >
+      <Check className="h-4 w-4" />
+    </CheckboxPrimitive.Indicator>
+  </CheckboxPrimitive.Root>
+))
+Checkbox.displayName = CheckboxPrimitive.Root.displayName
 
-"@/lib/utiln } from rt { cmpo
-ireact"
-"lucide-k } from ec
-import { Chbox"/react-checkdix-uira from "@Primitiveboxckt * as Che"
-imporom "reacteact fr * as Rort"
-
-impntse clie"u
+export { Checkbox }

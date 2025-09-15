@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { PerformanceMonitor } from '../../../../lib/config/monitoring'
+import { getMonitoringConfig } from '@/lib/config/monitoring'
 
 export async function GET() {
   const startTime = Date.now()
@@ -29,7 +29,10 @@ export async function GET() {
     const responseTime = Date.now() - startTime
     
     // Track performance
-    PerformanceMonitor.track('db_health_check', responseTime, { type: 'comprehensive' })
+    const config = getMonitoringConfig()
+    if (config.database.enabled && responseTime > config.database.timeout) {
+      console.warn(`Database health check took ${responseTime}ms, exceeding timeout of ${config.database.timeout}ms`)
+    }
     
     const checks = {
       profiles: {

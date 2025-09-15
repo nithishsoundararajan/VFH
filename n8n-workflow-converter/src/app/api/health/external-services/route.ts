@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PerformanceMonitor } from '../../../../lib/config/monitoring'
+import { getMonitoringConfig } from '@/lib/config/monitoring'
 
 export async function GET() {
   const startTime = Date.now()
@@ -154,7 +154,10 @@ export async function GET() {
     const responseTime = Date.now() - startTime
     
     // Track performance
-    PerformanceMonitor.track('external_services_health_check', responseTime, { type: 'comprehensive' })
+    const config = getMonitoringConfig()
+    if (config.externalServices.enabled && responseTime > config.externalServices.timeout) {
+      console.warn(`External services health check took ${responseTime}ms, exceeding timeout of ${config.externalServices.timeout}ms`)
+    }
     
     // Determine overall status
     const configuredServices = Object.values(checks).filter((check: any) => check.configured)

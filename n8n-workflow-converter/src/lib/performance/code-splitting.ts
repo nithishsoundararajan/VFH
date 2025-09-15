@@ -24,6 +24,9 @@ export function createLazyComponent<T extends ComponentType<any>>(
 // Dynamic imports with loading states
 export const createDynamicComponent = <T extends ComponentType<any>>(
   importFn: () => Promise<{ default: T }>,
+  fallback?: ComponentType
+) => {
+  importFn: () => Promise<{ default: T }>,
   options?: {
     loading?: ComponentType;
     ssr?: boolean;
