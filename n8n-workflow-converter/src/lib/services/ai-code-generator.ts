@@ -383,15 +383,27 @@ export class AICodeGenerator {
     prompt: string,
     context: CodeGenerationContext
   ): Promise<CodeGenerationResult> {
-    // Try system OpenRouter key first
-    const systemOpenRouterKey = process.env.OPENROUTER_API_KEY;
-    
-    if (systemOpenRouterKey) {
+    // Try multiple system API keys in order of preference
+    const apiKeys = {
+      openrouter: process.env.OPENROUTER_API_KEY,
+      gemini: process.env.GOOGLE_AI_API_KEY || process.env.Gemini_API,
+      openai: process.env.OPENAI_API_KEY
+    };
+
+    console.log('System API Keys Status:', {
+      openrouter: apiKeys.openrouter ? '✅ Available' : '❌ Missing',
+      gemini: apiKeys.gemini ? '✅ Available' : '❌ Missing', 
+      openai: apiKeys.openai ? '✅ Available' : '❌ Missing'
+    });
+
+    // Try OpenRouter first (most reliable)
+    if (apiKeys.openrouter) {
       try {
+        console.log('Using system OpenRouter API key with GPT-4o-mini');
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${systemOpenRouterKey}`,
+            'Authorization': `Bearer ${apiKeys.openrouter}`,
             'Content-Type': 'application/json',
             'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://n8n-workflow-converter.com',
             'X-Title': 'n8n Workflow Converter (System Default)',
@@ -418,6 +430,7 @@ export class AICodeGenerator {
           const generatedCode = data.choices[0]?.message?.content || '';
 
           if (generatedCode.trim()) {
+            console.log('✅ OpenRouter generation successful');
             return {
               success: true,
               code: generatedCode,
@@ -425,21 +438,85 @@ export class AICodeGenerator {
               fallbackUsed: false
             };
           }
+        } else {
+          console.error('OpenRouter API error:', response.status, await response.text());
         }
       } catch (error) {
         console.warn('System OpenRouter failed:', error);
       }
     }
 
-    // Try system OpenAI key as secondary fallback
-    const systemOpenAIKey = process.env.OPENAI_API_KEY;
-    
-    if (systemOpenAIKey) {
+    // Try Gemini as fallback
+    if (apiKeys.gemini) {
       try {
+        console.log('Trying Gemini API as fallback');
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKeys.gemini}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are an expert Node.js developer specializing in n8n workflow automation. Generate clean, production-ready, well-documented code that follows best practices.\n\n${prompt}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              topK: 1,
+              topP: 1,
+              maxOutputTokens: 4000,
+            },
+            safetySettings: [
+              {
+                category: 'HARM_CATEGORY_HARASSMENT',
+                threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+              },
+              {
+                category: 'HARM_CATEGORY_HATE_SPEECH',
+                threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+              },
+              {
+                category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+              },
+              {
+                category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+              }
+            ]
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const generatedCode = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+          if (generatedCode.trim()) {
+            console.log('✅ Gemini generation successful');
+            return {
+              success: true,
+              code: generatedCode,
+              provider: 'system_default',
+              fallbackUsed: false
+            };
+          }
+        } else {
+          console.error('Gemini API error:', response.status, await response.text());
+        }
+      } catch (error) {
+        console.warn('System Gemini failed:', error);
+      }
+    }
+
+    // Try OpenAI as last resort
+    if (apiKeys.openai) {
+      try {
+        console.log('Trying OpenAI API as last resort');
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${systemOpenAIKey}`,
+            'Authorization': `Bearer ${apiKeys.openai}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -464,6 +541,7 @@ export class AICodeGenerator {
           const generatedCode = data.choices[0]?.message?.content || '';
 
           if (generatedCode.trim()) {
+            console.log('✅ OpenAI generation successful');
             return {
               success: true,
               code: generatedCode,
@@ -471,14 +549,16 @@ export class AICodeGenerator {
               fallbackUsed: false
             };
           }
+        } else {
+          console.error('OpenAI API error:', response.status, await response.text());
         }
       } catch (error) {
         console.warn('System OpenAI failed:', error);
       }
     }
 
-    // Ultimate fallback to template-based generation
-    console.warn('All AI providers failed, using template fallback');
+    // Ultimate fallback to enhanced template-based generation
+    console.warn('❌ All AI providers failed, using enhanced template fallback');
     return {
       success: true,
       code: this.generateTemplateCode(context),

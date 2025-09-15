@@ -6,7 +6,7 @@ interface CreateProjectRequest {
   name: string;
   description: string;
   workflow_json: {
-    nodes?: Array<{ type: string; name: string; [key: string]: any }>;
+    nodes?: Array<{ type: string; name: string;[key: string]: any }>;
     connections?: Record<string, any>;
     name?: string;
     [key: string]: any;
@@ -33,10 +33,10 @@ interface CreateProjectRequest {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
+
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
 
       // Get user's AI provider settings
       const aiSettings = await aiProviderService.getUserSettings(user.id);
-      
+
       await supabase.from('generation_logs').insert({
         project_id: project.id,
         log_level: 'info',
@@ -194,22 +194,25 @@ export async function POST(request: NextRequest) {
 
       // Validate AI-generated code
       const validationResult = await validateGeneratedCode(aiGeneratedProject);
-      
+
+      // Initialize projectFiles variable
+      let projectFiles = [];
+
       if (!validationResult.isValid) {
         await supabase.from('generation_logs').insert({
           project_id: project.id,
           log_level: 'warn',
           message: `AI-generated code validation failed: ${validationResult.errors.join(', ')}. Using fallback generation.`
         });
-        
+
         // Fallback to configuration-aware generation
-        const projectFiles = await generateConfigAwareProject(
+        projectFiles = await generateConfigAwareProject(
           sanitizedName,
           workflow_json,
           nodeConfigs,
           sanitizedConfiguration
         );
-        
+
         await supabase.from('generation_logs').insert({
           project_id: project.id,
           log_level: 'info',
@@ -231,19 +234,19 @@ export async function POST(request: NextRequest) {
       });
 
       const { serverFileStorage } = await import('@/lib/services/file-storage-service');
-      
+
       // Determine which files to store
       const filesToStore = validationResult.isValid ? aiGeneratedProject.files : projectFiles;
-      
+
       // Convert files to the expected format
       const projectFilesForStorage = filesToStore.map((file: any) => ({
         path: file.path,
         content: file.content,
         type: file.path.endsWith('.js') ? 'javascript' as const :
-              file.path.endsWith('.json') ? 'json' as const :
-              file.path.endsWith('.md') ? 'markdown' as const :
+          file.path.endsWith('.json') ? 'json' as const :
+            file.path.endsWith('.md') ? 'markdown' as const :
               file.path.endsWith('.ts') ? 'typescript' as const :
-              'text' as const
+                'text' as const
       }));
 
       // Create GeneratedProject object
@@ -284,7 +287,7 @@ export async function POST(request: NextRequest) {
         // Update project status to failed
         await supabase
           .from('projects')
-          .update({ 
+          .update({
             status: 'failed',
             ai_provider: aiSettings?.provider || 'system_default',
             generation_method: 'failed'
@@ -297,7 +300,7 @@ export async function POST(request: NextRequest) {
       // Update project with file information
       await supabase
         .from('projects')
-        .update({ 
+        .update({
           status: 'completed',
           generated_at: new Date().toISOString(),
           ai_provider: aiSettings?.provider || 'system_default',
@@ -316,7 +319,7 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
       console.error('Code generation error:', error);
-      
+
       // Log the error with context
       await supabase.from('generation_logs').insert({
         project_id: project.id,
@@ -358,16 +361,16 @@ export async function POST(request: NextRequest) {
         });
 
         const { serverFileStorage: fallbackFileStorage } = await import('@/lib/services/file-storage-service');
-        
+
         // Convert fallback files to the expected format
         const fallbackProjectFiles = fallbackFiles.map((file: any) => ({
           path: file.path,
           content: file.content,
           type: file.path.endsWith('.js') ? 'javascript' as const :
-                file.path.endsWith('.json') ? 'json' as const :
-                file.path.endsWith('.md') ? 'markdown' as const :
+            file.path.endsWith('.json') ? 'json' as const :
+              file.path.endsWith('.md') ? 'markdown' as const :
                 file.path.endsWith('.ts') ? 'typescript' as const :
-                'text' as const
+                  'text' as const
         }));
 
         // Create GeneratedProject object for fallback
@@ -408,7 +411,7 @@ export async function POST(request: NextRequest) {
           // Update project status to failed
           await supabase
             .from('projects')
-            .update({ 
+            .update({
               status: 'failed',
               ai_provider: 'fallback',
               generation_method: 'failed'
@@ -421,7 +424,7 @@ export async function POST(request: NextRequest) {
         // Update project with fallback completion and file information
         await supabase
           .from('projects')
-          .update({ 
+          .update({
             status: 'completed',
             generated_at: new Date().toISOString(),
             ai_provider: 'fallback',
@@ -440,7 +443,7 @@ export async function POST(request: NextRequest) {
 
       } catch (fallbackError) {
         console.error('Fallback generation also failed:', fallbackError);
-        
+
         await supabase.from('generation_logs').insert({
           project_id: project.id,
           log_level: 'error',
@@ -450,7 +453,7 @@ export async function POST(request: NextRequest) {
         // Update project status to failed only if fallback also fails
         await supabase
           .from('projects')
-          .update({ 
+          .update({
             status: 'failed',
             ai_provider: 'none',
             generation_method: 'failed'
@@ -473,10 +476,10 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
+
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -518,11 +521,12 @@ async function generateConfigAwareProject(
   configuration: any
 ) {
   const files = [];
-  
-  // Import the configuration-aware generator
+
+  // Import the secure code generation modules
   const { configAwareGenerator } = await import('@/lib/code-generation/config-aware-generator');
-  
-  // Generate individual node files with embedded configurations
+  const { SecurePackageTemplate } = await import('@/lib/code-generation/secure-package-template');
+
+  // Generate individual node files with embedded configurations using secure templates
   const generationContext = {
     projectName,
     workflowName: workflow.name || projectName,
@@ -540,8 +544,8 @@ async function generateConfigAwareProject(
     }
   }
 
-  // Generate the enhanced project files
-  const enhancedFiles = await generateEnhancedProjectFiles(
+  // Generate secure project files
+  const enhancedFiles = await generateSecureProjectFiles(
     projectName,
     workflow,
     nodeConfigs,
@@ -563,7 +567,7 @@ async function generateAIEnhancedProject(
   aiCodeGenerator: any
 ) {
   try {
-    
+
     // Generate base project structure
     const baseFiles = await generateConfigAwareProject(
       projectName,
@@ -571,15 +575,17 @@ async function generateAIEnhancedProject(
       nodeConfigs,
       configuration
     );
-    
+
     let enhancedNodes = 0;
     const enhancedFiles = [];
-    
+
     // Enhance each node with AI if provider is available and valid
-    if (aiSettings?.provider !== 'system_default' && aiSettings?.isValid) {
+    if (aiSettings?.isValid) {
+      console.log(`Starting AI enhancement for ${nodeConfigs.length} nodes with provider: ${aiSettings.provider}`);
       for (const nodeConfig of nodeConfigs) {
         if (nodeConfig.nodeType !== 'n8n-nodes-base.stickyNote') {
           try {
+            console.log(`Enhancing node: ${nodeConfig.nodeName} (${nodeConfig.nodeType})`);
             const aiEnhancedNode = await generateAIEnhancedNode(
               nodeConfig,
               workflow,
@@ -587,37 +593,42 @@ async function generateAIEnhancedProject(
               aiCodeGenerator,
               userId
             );
-            
+
             if (aiEnhancedNode.enhanced) {
+              console.log(`✅ AI enhancement successful for ${nodeConfig.nodeName}`);
               enhancedFiles.push(aiEnhancedNode.file);
               enhancedNodes++;
             } else {
+              console.log(`❌ AI enhancement failed for ${nodeConfig.nodeName}, using base implementation`);
               // Use base implementation if AI enhancement fails
               const baseNode = baseFiles.find(f => f.path.includes(nodeConfig.nodeName));
               if (baseNode) enhancedFiles.push(baseNode);
             }
           } catch (aiError) {
-            console.warn(`AI enhancement failed for node ${nodeConfig.nodeName}:`, aiError);
+            console.error(`❌ AI enhancement error for node ${nodeConfig.nodeName}:`, aiError);
             // Use base implementation as fallback
             const baseNode = baseFiles.find(f => f.path.includes(nodeConfig.nodeName));
             if (baseNode) enhancedFiles.push(baseNode);
           }
         }
       }
+      console.log(`🎯 AI enhancement completed: ${enhancedNodes}/${nodeConfigs.length} nodes enhanced`);
+    } else {
+      console.log(`⚠️ AI enhancement skipped - Provider: ${aiSettings?.provider}, Valid: ${aiSettings?.isValid}`);
     }
-    
+
     // Combine enhanced nodes with other project files
-    const otherFiles = baseFiles.filter(f => 
+    const otherFiles = baseFiles.filter(f =>
       !nodeConfigs.some(config => f.path.includes(config.nodeName))
     );
-    
+
     return {
       files: [...enhancedFiles, ...otherFiles],
       enhancedNodes,
       aiProvider: aiSettings?.provider || 'system_default',
       totalNodes: nodeConfigs.length
     };
-    
+
   } catch (error) {
     console.error('AI-enhanced project generation failed:', error);
     // Fallback to base generation
@@ -627,7 +638,7 @@ async function generateAIEnhancedProject(
       nodeConfigs,
       configuration
     );
-    
+
     return {
       files: baseFiles,
       enhancedNodes: 0,
@@ -647,7 +658,7 @@ async function generateAIEnhancedNode(
   userId: string
 ) {
   const className = nodeConfig.nodeName.replace(/[^a-zA-Z0-9]/g, '').replace(/^\d/, 'Node').replace(/^./, (str: string) => str.toUpperCase()) + 'Node';
-  
+
   // Create AI prompt for node enhancement
   const prompt = `
 Generate a complete, production-ready Node.js implementation for this n8n workflow node:
@@ -686,6 +697,7 @@ Generate ONLY the complete JavaScript class implementation, no explanations or m
 `;
 
   try {
+    console.log(`🤖 Calling AI generator for ${nodeConfig.nodeName}...`);
     // Call AI code generator to generate enhanced code
     const aiResult = await aiCodeGenerator.generateCode(userId, prompt, {
       nodeType: nodeConfig.nodeType,
@@ -695,6 +707,14 @@ Generate ONLY the complete JavaScript class implementation, no explanations or m
       projectName: projectName
     });
     
+    console.log(`🤖 AI result for ${nodeConfig.nodeName}:`, {
+      success: aiResult.success,
+      provider: aiResult.provider,
+      fallbackUsed: aiResult.fallbackUsed,
+      codeLength: aiResult.code?.length || 0,
+      error: aiResult.error
+    });
+
     if (aiResult.success && aiResult.code && aiResult.code.trim().length > 200) {
       const enhancedContent = `/**
  * AI-Enhanced Node Implementation: ${nodeConfig.nodeName}
@@ -725,7 +745,7 @@ export default ${className};`;
   } catch (error) {
     console.warn(`AI enhancement failed for ${nodeConfig.nodeName}:`, error);
   }
-  
+
   return { enhanced: false };
 }
 
@@ -733,24 +753,24 @@ export default ${className};`;
 // Helper function to validate AI-generated code
 async function validateGeneratedCode(aiProject: any) {
   const errors = [];
-  
+
   try {
     // Basic validation checks
     if (!aiProject.files || !Array.isArray(aiProject.files)) {
       errors.push('Invalid project structure: missing files array');
     }
-    
+
     if (aiProject.files.length === 0) {
       errors.push('No files generated');
     }
-    
+
     // Validate each file
     for (const file of aiProject.files) {
       if (!file.path || !file.content) {
         errors.push(`Invalid file structure: ${file.path || 'unknown'}`);
         continue;
       }
-      
+
       // Basic syntax validation for JavaScript files
       if (file.path.endsWith('.js')) {
         try {
@@ -758,14 +778,14 @@ async function validateGeneratedCode(aiProject: any) {
           if (!file.content.includes('class ') && !file.content.includes('function ') && !file.content.includes('export ')) {
             errors.push(`JavaScript file appears to be empty or invalid: ${file.path}`);
           }
-          
+
           // Check for common syntax errors
           const openBraces = (file.content.match(/{/g) || []).length;
           const closeBraces = (file.content.match(/}/g) || []).length;
           if (openBraces !== closeBraces) {
             errors.push(`Mismatched braces in file: ${file.path}`);
           }
-          
+
           // Check for export statement
           if (!file.content.includes('export ')) {
             errors.push(`Missing export statement in file: ${file.path}`);
@@ -774,7 +794,7 @@ async function validateGeneratedCode(aiProject: any) {
           errors.push(`Syntax validation failed for ${file.path}: ${syntaxError.message}`);
         }
       }
-      
+
       // Validate JSON files
       if (file.path.endsWith('.json')) {
         try {
@@ -784,7 +804,7 @@ async function validateGeneratedCode(aiProject: any) {
         }
       }
     }
-    
+
     // Check for required files
     const requiredFiles = ['package.json', 'main.js', '.env.example', 'README.md'];
     for (const requiredFile of requiredFiles) {
@@ -792,14 +812,14 @@ async function validateGeneratedCode(aiProject: any) {
         errors.push(`Missing required file: ${requiredFile}`);
       }
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors,
       fileCount: aiProject.files.length,
       enhancedNodes: aiProject.enhancedNodes || 0
     };
-    
+
   } catch (error) {
     return {
       isValid: false,
@@ -810,69 +830,79 @@ async function validateGeneratedCode(aiProject: any) {
   }
 }
 
-// Helper function to generate enhanced project files
-async function generateEnhancedProjectFiles(
+// Helper function to generate secure project files
+async function generateSecureProjectFiles(
   projectName: string,
   workflow: any,
   nodeConfigs: any[],
   configuration: any
 ) {
   const files = [];
-  
+
+  // Import secure package template
+  const { SecurePackageTemplate } = await import('@/lib/code-generation/secure-package-template');
+
   // Analyze workflow nodes and their configurations
   const nodes = workflow.nodes || [];
   const nodeTypes = nodes.map((node: any) => node.type);
   const uniqueNodeTypes = Array.from(new Set(nodeTypes));
-  const triggerNodes = nodes.filter((node: any) => 
+  const triggerNodes = nodes.filter((node: any) =>
     node.type?.includes('trigger') || node.type?.includes('Trigger')
   );
 
-  // Collect all dependencies from node configurations
-  const allDependencies = new Set(['dotenv', 'lodash']);
+  // Collect all dependencies from node configurations (filtered for security)
+  const allDependencies = new Set<string>();
   const allEnvVars = new Set<string>();
-  
+
   for (const nodeConfig of nodeConfigs) {
-    nodeConfig.dependencies.forEach((dep: string) => allDependencies.add(dep));
+    // Filter out vulnerable dependencies
+    const safeDependencies = nodeConfig.dependencies.filter((dep: string) =>
+      !['vm2', 'eval', 'child_process'].some(unsafe => dep.includes(unsafe))
+    );
+    safeDependencies.forEach((dep: string) => allDependencies.add(dep));
     nodeConfig.environmentVariables.forEach((env: any) => allEnvVars.add(env.key));
   }
 
-  // Generate package.json with smart dependencies
-  const dependencies: Record<string, string> = {
-    'dotenv': '^16.0.0',
-    'lodash': '^4.17.21'
-  };
+  // Add basic secure dependencies
+  allDependencies.add('dotenv');
+  if (nodeTypes.some(type => type.includes('httpRequest'))) {
+    allDependencies.add('axios');
+  }
+  if (nodeTypes.some(type => type.includes('webhook'))) {
+    allDependencies.add('express');
+  }
 
-  // Add dependencies based on actual node configurations
-  if (allDependencies.has('axios')) dependencies['axios'] = '^1.6.0';
-  if (allDependencies.has('express')) dependencies['express'] = '^4.18.2';
-  if (allDependencies.has('vm2')) dependencies['vm2'] = '^3.9.19';
-  if (allDependencies.has('form-data')) dependencies['form-data'] = '^4.0.0';
-  if (allDependencies.has('mysql2')) dependencies['mysql2'] = '^3.6.0';
-  if (allDependencies.has('pg')) dependencies['pg'] = '^8.11.0';
-  if (allDependencies.has('mongodb')) dependencies['mongodb'] = '^6.0.0';
-  if (allDependencies.has('redis')) dependencies['redis'] = '^4.6.0';
+  // Generate secure package.json using the secure template
+  const packageConfig = {
+    projectName,
+    description: `Generated from n8n workflow: ${workflow.name || projectName}`,
+    nodeVersion: configuration?.nodeVersion || '18',
+    packageManager: configuration?.packageManager || 'npm',
+    dependencies: Array.from(allDependencies),
+    environmentVariables: Array.from(allEnvVars)
+  };
 
   files.push({
     path: 'package.json',
-    content: JSON.stringify({
-      name: projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-      version: '1.0.0',
-      description: `Generated from n8n workflow: ${workflow.name || projectName}`,
-      main: 'main.js',
-      type: 'module',
-      scripts: {
-        start: 'node main.js',
-        dev: 'nodemon main.js',
-        test: 'echo "No tests specified" && exit 0'
-      },
-      dependencies,
-      devDependencies: {
-        'nodemon': '^3.0.0'
-      },
-      keywords: ['n8n', 'workflow', 'automation', 'generated'],
-      author: 'n8n Workflow Converter',
-      license: 'MIT'
-    }, null, 2)
+    content: SecurePackageTemplate.generatePackageJson(packageConfig)
+  });
+
+  // Generate environment validation script
+  files.push({
+    path: 'scripts/validate-env.js',
+    content: SecurePackageTemplate.generateEnvValidationScript(Array.from(allEnvVars))
+  });
+
+  // Generate secure .env.example
+  files.push({
+    path: '.env.example',
+    content: SecurePackageTemplate.generateEnvExample(Array.from(allEnvVars))
+  });
+
+  // Generate secure README with security notes
+  files.push({
+    path: 'README.md',
+    content: SecurePackageTemplate.generateSecureReadme(packageConfig)
   });
 
   // Generate main.js with configuration-aware workflow execution
@@ -1007,11 +1037,11 @@ main().catch(error => {
 
   // Generate .env.example with actual required environment variables
   const envVarEntries = Array.from(allEnvVars).map(envVar => {
-    const nodeConfig = nodeConfigs.find(config => 
+    const nodeConfig = nodeConfigs.find(config =>
       config.environmentVariables.some((env: any) => env.key === envVar)
     );
     const envConfig = nodeConfig?.environmentVariables.find((env: any) => env.key === envVar);
-    
+
     return `# ${envConfig?.description || `Configuration for ${envVar}`}
 ${envVar}=${envConfig?.example || 'your_value_here'}`;
   }).join('\n\n');
@@ -1101,9 +1131,9 @@ ${projectName}/
 
 ## 🔄 Workflow Execution Flow
 
-${nodes.map((node: any, index: number) => 
-  `${index + 1}. **${node.name}** (\`${node.type}\`)`
-).join('\n')}
+${nodes.map((node: any, index: number) =>
+      `${index + 1}. **${node.name}** (\`${node.type}\`)`
+    ).join('\n')}
 
 ## ⚠️ Important Notes
 

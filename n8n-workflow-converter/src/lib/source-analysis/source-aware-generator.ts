@@ -54,7 +54,7 @@ export class SourceAwareAIGenerator {
 
       // Step 2: Check if node exists in source
       const nodeExists = await this.repoManager.nodeExists(nodeType);
-      
+
       if (!nodeExists) {
         console.warn(`Node ${nodeType} not found in n8n source, using fallback`);
         return await this.generateFallback(userId, nodeType, context);
@@ -90,7 +90,7 @@ export class SourceAwareAIGenerator {
 
     } catch (error) {
       console.error(`Source-aware generation failed for ${nodeType}:`, error);
-      
+
       // Fallback to template-based generation
       return await this.generateFallback(userId, nodeType, context, error.message);
     }
@@ -154,10 +154,10 @@ Generate a standalone Node.js class that:
    - Support all credential types defined in the source
    - Implement proper authentication flows
 
-4. **DEPENDENCY REMOVAL**:
-   - Remove n8n-specific imports and dependencies
-   - Replace n8n helper functions with standalone equivalents
-   - Convert n8n data structures to standard JavaScript objects
+4. **DEPENDENCY ADAPTATION**:
+   - Keep essential n8n imports and dependencies
+   - Adapt n8n helper functions for standalone use
+   - Maintain n8n data structures for compatibility
 
 5. **ERROR HANDLING**:
    - Preserve the same error messages and error types
@@ -165,9 +165,9 @@ Generate a standalone Node.js class that:
    - Handle edge cases as in the original code
 
 6. **DATA COMPATIBILITY**:
-   - Maintain input/output data structure compatibility
-   - Handle n8n's item-based data flow
-   - Preserve data transformation logic
+   - Use n8n's native data structures (INodeExecutionData, etc.)
+   - Maintain n8n's item-based data flow exactly
+   - Preserve all data transformation logic and types
 
 7. **PERFORMANCE**:
    - Implement the same optimizations as the source
@@ -242,7 +242,7 @@ Generate the complete implementation now:
     console.log(`Using fallback generation for ${nodeType}`);
 
     const fallbackPrompt = this.buildFallbackPrompt(nodeType, context);
-    
+
     try {
       const generatedCode = await this.aiHelper.generateCode(userId, fallbackPrompt, {
         nodeType,
@@ -291,7 +291,7 @@ Return a complete JavaScript class implementation.
    */
   private generateTemplateCode(nodeType: string, context: GenerationContext): string {
     const className = this.getClassName(nodeType);
-    
+
     return `
 /**
  * Template implementation of ${nodeType}
@@ -344,7 +344,7 @@ export default ${className};
     const batchSize = 3;
     for (let i = 0; i < nodeTypes.length; i += batchSize) {
       const batch = nodeTypes.slice(i, i + batchSize);
-      
+
       const batchPromises = batch.map(async (nodeType) => {
         const context = contexts[nodeType];
         if (!context) {
@@ -378,7 +378,7 @@ export default ${className};
     try {
       const info = await this.repoManager.getRepositoryInfo();
       const stats = await this.repoManager.getRepositoryStats();
-      
+
       return {
         isInitialized: true,
         info,

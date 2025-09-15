@@ -4,6 +4,7 @@
  */
 
 import { ExtractedConfig, ConfiguredParameter, CredentialConfig } from '../node-configuration/config-extractor';
+import { SecureNodeTemplates } from './secure-node-templates';
 
 export interface GeneratedNodeFile {
   filePath: string;
@@ -28,14 +29,76 @@ export class ConfigAwareCodeGenerator {
     const className = this.generateClassName(config.nodeName);
     const filePath = `src/nodes/${className}.js`;
 
-    let content = this.generateNodeClass(config, className, context);
+    let content = this.generateSecureNodeClass(config, className, context);
 
     return {
       filePath,
       content,
-      dependencies: config.dependencies,
+      dependencies: this.getSecureDependencies(config),
       environmentVariables: config.environmentVariables.map(env => env.key)
     };
+  }
+
+  /**
+   * Generate secure node class using templates
+   */
+  private generateSecureNodeClass(config: ExtractedConfig, className: string, context: CodeGenerationContext): string {
+    // Use secure templates for specific node types
+    switch (config.nodeType) {
+      case 'n8n-nodes-base.code':
+        return SecureNodeTemplates.generateCodeNodeTemplate({
+          nodeName: config.nodeName,
+          nodeType: config.nodeType,
+          nodeId: config.nodeId,
+          mode: config.configuredParameters.find(p => p.name === 'mode')?.value,
+          jsCode: config.configuredParameters.find(p => p.name === 'jsCode')?.value
+        });
+      
+      case 'n8n-nodes-base.set':
+        return SecureNodeTemplates.generateSetNodeTemplate({
+          nodeName: config.nodeName,
+          nodeType: config.nodeType,
+          nodeId: config.nodeId,
+          assignments: config.configuredParameters.find(p => p.name === 'assignments')?.value
+        });
+      
+      default:
+        return SecureNodeTemplates.generateGenericNodeTemplate({
+          nodeName: config.nodeName,
+          nodeType: config.nodeType,
+          nodeId: config.nodeId,
+          parameters: this.extractParameters(config)
+        });
+    }
+  }
+
+  /**
+   * Get secure dependencies (filtered for safety)
+   */
+  private getSecureDependencies(config: ExtractedConfig): string[] {
+    const safeDependencies = config.dependencies.filter(dep => 
+      !['vm2', 'eval', 'child_process'].some(unsafe => dep.includes(unsafe))
+    );
+    
+    // Add required secure dependencies
+    if (config.nodeType === 'n8n-nodes-base.code' || config.nodeType === 'n8n-nodes-base.set') {
+      // Node.js built-in modules don't need to be added to dependencies
+    }
+    
+    return safeDependencies;
+  }
+
+  /**
+   * Extract parameters from config
+   */
+  private extractParameters(config: ExtractedConfig): Record<string, any> {
+    const parameters: Record<string, any> = {};
+    
+    for (const param of config.configuredParameters) {
+      parameters[param.name] = param.value;
+    }
+    
+    return parameters;
   }
 
   /**
@@ -87,24 +150,33 @@ export default ${className};`;
         imports.push("import FormData from 'form-data';");
         break;
       case 'n8n-nodes-base.code':
-        imports.push("import { VM } from 'vm2';");
+        imports.push("import { vm } from 'node:vm';");
+        imports.push("import crypto from 'node:crypto';");
         break;
       case 'n8n-nodes-base.set':
-        imports.push("import _ from 'lodash';");
+        // Remove lodash dependency for security
         break;
       case 'n8n-nodes-base.webhook':
         imports.push("import express from 'express';");
         break;
     }
 
-    // Additional imports based on dependencies
+    // Additional imports based on dependencies (filtered for security)
     for (const dep of config.dependencies) {
-      if (!imports.some(imp => imp.includes(dep))) {
+      if (!imports.some(imp => imp.includes(dep)) && this.isSafeDependency(dep)) {
         imports.push(`import ${dep} from '${dep}';`);
       }
     }
 
     return imports.join('\n');
+  }
+
+  /**
+   * Check if a dependency is safe to include
+   */
+  private isSafeDependency(dep: string): boolean {
+    const unsafeDependencies = ['vm2', 'eval', 'child_process'];
+    return !unsafeDependencies.some(unsafe => dep.includes(unsafe));
   }
 
   /**
@@ -275,23 +347,11 @@ ${initCode}
     const modeParam = config.configuredParameters.find(p => p.name === 'mode');
     const codeParam = config.configuredParameters.find(p => p.name === 'jsCode');
 
-    return `    // Configure JavaScript execution
+    return `    // Configure JavaScript execution (secure implementation)
     this.executionMode = ${this.formatParameterValue(modeParam) || "'runOnceForAllItems'"};
     this.userCode = ${this.formatParameterValue(codeParam) || "''"}; 
     
-    // Setup VM for secure code execution
-    this.vm = new VM({
-      timeout: 30000,
-      sandbox: {
-        console: console,
-        setTimeout: setTimeout,
-        clearTimeout: clearTimeout,
-        Buffer: Buffer,
-        Date: Date,
-        Math: Math,
-        JSON: JSON
-      }
-    });`;
+    // No VM initialization needed - using Node.js built-in vm module`;
   }
 
   /**
@@ -402,37 +462,47 @@ ${executionLogic}
    * Generate Code node execution logic
    */
   private generateCodeNodeExecution(config: ExtractedConfig): string {
-    return `      // Execute JavaScript code with configured mode
-      if (this.executionMode === 'runOnceForEachItem') {
+    const modeParam = config.configuredParameters.find(p => p.name === 'mode');
+    const codeParam = config.configuredParameters.find(p => p.name === 'jsCode');
+
+    return `      // Execute JavaScript code with configured mode (secure implementation)
+      const executionMode = ${this.formatParameterValue(modeParam) || "'runOnceForAllItems'"};
+      let userCode = ${this.formatParameterValue(codeParam) || "''"}; 
+      
+      // Resolve dynamic code if it's a function
+      if (typeof userCode === 'function') {
+        userCode = userCode(inputData, context);
+      }
+      
+      // Clean and prepare the code for execution
+      const cleanedCode = this.prepareCodeForExecution(userCode);
+      
+      if (executionMode === 'runOnceForEachItem') {
         const results = [];
         const items = Array.isArray(inputData) ? inputData : [inputData];
         
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
-          const sandbox = {
-            ...this.vm.sandbox,
-            $input: { item: { json: item } },
-            $items: () => items,
-            $json: item,
+          const result = await this.executeCodeSecurely(cleanedCode, {
             inputData: item,
-            context: context
-          };
-          
-          const result = this.vm.run(this.userCode, { sandbox });
+            context: context,
+            $json: item,
+            $items: () => items,
+            itemIndex: i
+          });
           results.push(result);
         }
         
         return results;
       } else {
         // Run once for all items
-        const sandbox = {
-          ...this.vm.sandbox,
-          $items: () => Array.isArray(inputData) ? inputData : [inputData],
+        const items = Array.isArray(inputData) ? inputData : [inputData];
+        return await this.executeCodeSecurely(cleanedCode, {
           inputData: inputData,
-          context: context
-        };
-        
-        return this.vm.run(this.userCode, { sandbox });
+          context: context,
+          $json: items[0] || {},
+          $items: () => items
+        });
       }`;
   }
 
@@ -442,14 +512,19 @@ ${executionLogic}
   private generateSetNodeExecution(config: ExtractedConfig): string {
     const assignmentsParam = config.configuredParameters.find(p => p.name === 'assignments');
     
-    return `      // Apply configured assignments
-      const assignments = ${this.formatParameterValue(assignmentsParam) || '[]'};
-      const result = { ...inputData };
+    return `      // Apply configured assignments (secure implementation)
+      const assignments = ${this.formatParameterValue(assignmentsParam) || '{ assignments: [] }'};
+      let result = { ...inputData };
       
       if (assignments && assignments.assignments) {
         for (const assignment of assignments.assignments) {
-          const value = this.processAssignmentValue(assignment.value, inputData, context);
-          _.set(result, assignment.name, value);
+          try {
+            const value = await this.processAssignmentValue(assignment.value, inputData, context);
+            this.setValueByPath(result, assignment.name, value);
+          } catch (error) {
+            console.warn(\`Assignment failed for \${assignment.name}:\`, error.message);
+            // Continue with other assignments
+          }
         }
       }
       
@@ -510,44 +585,249 @@ ${config.configuredParameters.map(p => `        ${p.name}: this.${p.name}`).join
   private generateHelperMethods(config: ExtractedConfig): string {
     const methods: string[] = [];
 
-    // Add parameter processing method
-    methods.push(`  /**
-   * Process assignment values with expression support
+    // Add secure code execution methods for Code nodes
+    if (config.nodeType === 'n8n-nodes-base.code') {
+      methods.push(this.generateSecureCodeMethods());
+    }
+
+    // Add secure assignment methods for Set nodes
+    if (config.nodeType === 'n8n-nodes-base.set') {
+      methods.push(this.generateSecureAssignmentMethods());
+    }
+
+    // Add common utility methods
+    methods.push(this.generateUtilityMethods());
+
+    return methods.join('\n\n');
+  }
+
+  /**
+   * Generate secure code execution methods
    */
-  processAssignmentValue(value, inputData, context) {
-    if (typeof value === 'string' && value.startsWith('=')) {
-      // Handle n8n expressions
-      const expression = value.substring(1);
-      try {
-        return this.evaluateExpression(expression, inputData, context);
-      } catch (error) {
-        console.warn('Expression evaluation failed:', error);
-        return value;
+  private generateSecureCodeMethods(): string {
+    return `  /**
+   * Prepare user code for secure execution
+   */
+  prepareCodeForExecution(userCode) {
+    if (!userCode || typeof userCode !== 'string') {
+      return 'return {};';
+    }
+
+    // Remove any dangerous patterns
+    let cleanedCode = userCode
+      .replace(/require\\s*\\(/g, '// require(') // Disable require
+      .replace(/import\\s+/g, '// import ') // Disable import
+      .replace(/process\\./g, '// process.') // Disable process access
+      .replace(/global\\./g, '// global.') // Disable global access
+      .replace(/eval\\s*\\(/g, '// eval(') // Disable eval
+      .replace(/Function\\s*\\(/g, '// Function('); // Disable Function constructor
+
+    // Ensure code returns a value if it doesn't already
+    if (!cleanedCode.includes('return')) {
+      // If it's a simple expression, wrap it in return
+      if (!cleanedCode.includes(';') && !cleanedCode.includes('\\n')) {
+        cleanedCode = \`return \${cleanedCode};\`;
+      } else {
+        // For complex code, ensure it has a return statement
+        cleanedCode = \`\${cleanedCode}\\nif (typeof result !== 'undefined') return result;\`;
       }
     }
-    return value;
-  }`);
 
-    // Add expression evaluator
-    methods.push(`  /**
-   * Evaluate n8n-style expressions
+    // Wrap in async function if it contains await
+    if (cleanedCode.includes('await')) {
+      cleanedCode = \`(async () => { \${cleanedCode} })();\`;
+    }
+
+    return cleanedCode;
+  }
+
+  /**
+   * Execute code securely using Node.js built-in vm
    */
-  evaluateExpression(expression, inputData, context) {
-    // Simple expression evaluator - can be enhanced
+  async executeCodeSecurely(code, executionContext) {
+    try {
+      // Create secure sandbox
+      const sandbox = {
+        // Input data and context
+        inputData: executionContext.inputData,
+        context: executionContext.context,
+        $json: executionContext.$json,
+        $items: executionContext.$items,
+        itemIndex: executionContext.itemIndex,
+        
+        // Safe built-ins
+        console: {
+          log: (...args) => console.log('[User Code]', ...args),
+          warn: (...args) => console.warn('[User Code]', ...args),
+          error: (...args) => console.error('[User Code]', ...args)
+        },
+        Math: Math,
+        Date: Date,
+        JSON: JSON,
+        Buffer: Buffer,
+        
+        // Utility functions
+        setTimeout: setTimeout,
+        clearTimeout: clearTimeout,
+        
+        // Result variable for user code
+        result: undefined,
+        
+        // Helper functions
+        $: (path) => this.getValueByPath(executionContext.$json, path),
+        $node: (nodeName) => executionContext.context.getNodeOutput?.(nodeName) || {},
+        
+        // Promise support
+        Promise: Promise
+      };
+
+      // Create VM context
+      const vmContext = vm.createContext(sandbox);
+      
+      // Set timeout for execution
+      const timeout = 30000; // 30 seconds
+      
+      // Execute the code
+      const result = await vm.runInContext(code, vmContext, {
+        timeout: timeout,
+        displayErrors: true,
+        breakOnSigint: true
+      });
+
+      // Handle async results
+      if (result && typeof result.then === 'function') {
+        return await result;
+      }
+
+      return result || sandbox.result || {};
+      
+    } catch (error) {
+      console.error('Code execution error:', error);
+      throw new Error(\`Code execution failed: \${error.message}\`);
+    }
+  }`;
+  }
+
+  /**
+   * Generate secure assignment methods
+   */
+  private generateSecureAssignmentMethods(): string {
+    return `  /**
+   * Process assignment values with secure expression support
+   */
+  async processAssignmentValue(value, inputData, context) {
+    if (typeof value === 'string' && value.startsWith('=')) {
+      // Handle n8n expressions securely
+      const expression = value.substring(1);
+      try {
+        return await this.evaluateExpressionSecurely(expression, inputData, context);
+      } catch (error) {
+        console.warn('Expression evaluation failed:', error.message);
+        return value; // Return original value as fallback
+      }
+    }
+    
+    // Handle function values
+    if (typeof value === 'function') {
+      try {
+        return await value(inputData, context);
+      } catch (error) {
+        console.warn('Function evaluation failed:', error.message);
+        return undefined;
+      }
+    }
+    
+    return value;
+  }
+
+  /**
+   * Evaluate n8n-style expressions securely
+   */
+  async evaluateExpressionSecurely(expression, inputData, context) {
+    // Create secure sandbox for expression evaluation
     const sandbox = {
       $json: inputData,
       inputData: inputData,
       context: context,
       Math: Math,
       Date: Date,
-      JSON: JSON
+      JSON: JSON,
+      
+      // Helper functions
+      $: (path) => this.getValueByPath(inputData, path),
+      $node: (nodeName) => context.getNodeOutput?.(nodeName) || {},
+      
+      // Common n8n functions
+      $now: () => new Date(),
+      $today: () => new Date().toISOString().split('T')[0],
+      $uuid: () => crypto.randomUUID?.() || Math.random().toString(36)
     };
-    
-    const vm = new VM({ sandbox, timeout: 5000 });
-    return vm.run(expression);
-  }`);
 
-    return methods.join('\n\n');
+    // Clean the expression
+    let cleanExpression = expression
+      .replace(/require\\s*\\(/g, '// require(')
+      .replace(/process\\./g, '// process.')
+      .replace(/global\\./g, '// global.');
+
+    // Ensure expression returns a value
+    if (!cleanExpression.includes('return')) {
+      cleanExpression = \`return \${cleanExpression};\`;
+    }
+
+    try {
+      const vmContext = vm.createContext(sandbox);
+      const result = await vm.runInContext(cleanExpression, vmContext, {
+        timeout: 5000,
+        displayErrors: true
+      });
+
+      return result;
+    } catch (error) {
+      throw new Error(\`Expression evaluation failed: \${error.message}\`);
+    }
+  }
+
+  /**
+   * Set value by path (lodash-like functionality)
+   */
+  setValueByPath(obj, path, value) {
+    if (!path || !obj) return;
+    
+    const keys = path.split('.');
+    let current = obj;
+    
+    for (let i = 0; i < keys.length - 1; i++) {
+      const key = keys[i];
+      if (!(key in current) || typeof current[key] !== 'object') {
+        current[key] = {};
+      }
+      current = current[key];
+    }
+    
+    current[keys[keys.length - 1]] = value;
+  }`;
+  }
+
+  /**
+   * Generate utility methods
+   */
+  private generateUtilityMethods(): string {
+    return `  /**
+   * Get value by path (lodash-like functionality)
+   */
+  getValueByPath(obj, path) {
+    if (!path || !obj) return undefined;
+    
+    const keys = path.split('.');
+    let current = obj;
+    
+    for (const key of keys) {
+      if (current === null || current === undefined) return undefined;
+      current = current[key];
+    }
+    
+    return current;
+  }`;
   }
 
   /**

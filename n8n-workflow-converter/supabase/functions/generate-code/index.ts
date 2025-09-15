@@ -68,6 +68,15 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
     
+    // Log secret status for debugging
+    await logSecretStatus([
+      'OPENROUTER_API_KEY',
+      'GOOGLE_AI_API_KEY', 
+      'OPENAI_API_KEY',
+      'VIRUSTOTAL_API_KEY',
+      'API_KEY_ENCRYPTION_SECRET'
+    ])
+    
     // Initialize AI provider helper
     const aiHelper = new AIProviderHelper(supabaseUrl, supabaseKey)
 

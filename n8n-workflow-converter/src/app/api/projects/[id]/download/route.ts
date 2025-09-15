@@ -11,16 +11,19 @@ interface DownloadParams {
 export async function GET(request: NextRequest, { params }: DownloadParams) {
   try {
     const supabase = await createClient();
-    
+
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
+
+    // Await params in Next.js 15
+    const resolvedParams = await params;
 
     const { searchParams } = new URL(request.url);
     const format = (searchParams.get('format') || 'zip') as ExportFormat;
@@ -40,7 +43,7 @@ export async function GET(request: NextRequest, { params }: DownloadParams) {
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', resolvedParams.id)
       .single();
 
     if (projectError || !project) {
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest, { params }: DownloadParams) {
       const { data: sharedAccess } = await supabase
         .from('shared_projects')
         .select('id')
-        .eq('project_id', params.id)
+        .eq('project_id', resolvedParams.id)
         .eq('shared_with', user.id)
         .or('expires_at.is.null,expires_at.gt.now()')
         .single();
@@ -72,7 +75,7 @@ export async function GET(request: NextRequest, { params }: DownloadParams) {
 
     // Download the project
     const { data: downloadData, error: downloadError } = await serverDownloadService.downloadProject({
-      projectId: params.id,
+      projectId: resolvedParams.id,
       format,
       includeSource,
       includeDocs,
@@ -95,7 +98,7 @@ export async function GET(request: NextRequest, { params }: DownloadParams) {
 
     // Log successful download request
     await supabase.from('generation_logs').insert({
-      project_id: params.id,
+      project_id: resolvedParams.id,
       log_level: 'info',
       message: `Download requested: ${format} format`
     });
@@ -122,16 +125,19 @@ export async function GET(request: NextRequest, { params }: DownloadParams) {
 export async function POST(request: NextRequest, { params }: DownloadParams) {
   try {
     const supabase = await createClient();
-    
+
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
+
+    // Await params in Next.js 15
+    const resolvedParams = await params;
 
     const body = await request.json();
     const { format = 'zip', expiresIn = 3600 } = body;
@@ -156,7 +162,7 @@ export async function POST(request: NextRequest, { params }: DownloadParams) {
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', resolvedParams.id)
       .single();
 
     if (projectError || !project) {
@@ -171,7 +177,7 @@ export async function POST(request: NextRequest, { params }: DownloadParams) {
       const { data: sharedAccess } = await supabase
         .from('shared_projects')
         .select('id')
-        .eq('project_id', params.id)
+        .eq('project_id', resolvedParams.id)
         .eq('shared_with', user.id)
         .or('expires_at.is.null,expires_at.gt.now()')
         .single();
@@ -186,7 +192,7 @@ export async function POST(request: NextRequest, { params }: DownloadParams) {
 
     // Generate download link
     const { data: linkData, error: linkError } = await serverDownloadService.generateDownloadLink(
-      params.id,
+      resolvedParams.id,
       format,
       expiresIn
     );
@@ -207,7 +213,7 @@ export async function POST(request: NextRequest, { params }: DownloadParams) {
 
     // Log link generation
     await supabase.from('generation_logs').insert({
-      project_id: params.id,
+      project_id: resolvedParams.id,
       log_level: 'info',
       message: `Download link generated (expires: ${linkData.expiresAt.toISOString()})`
     });
