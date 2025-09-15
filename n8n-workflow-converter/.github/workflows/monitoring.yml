@@ -1,0 +1,497 @@
+name: Continuous Monitoring
+
+on:
+  schedule:
+    # Run monitoring checks every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to monitor'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+          - both
+      check_type:
+        description: 'Type of monitoring check'
+        required: true
+        type: choice
+        options:
+          - health
+          - performance
+          - security
+          - all
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # Health monitoring
+  health-monitoring:
+    name: Health Monitoring
+    runs-on: ubuntu-latest
+    if: github.event.inputs.check_type == 'health' || github.event.inputs.check_type == 'all' || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        environment: 
+          - ${{ github.event.inputs.environment == 'staging' && 'staging' || github.event.inputs.environment == 'production' && 'production' || github.event.inputs.environment == 'both' && 'staging' || 'staging' }}
+          - ${{ github.event.inputs.environment == 'both' && 'production' || github.event.inputs.environment == 'production' && 'production' || '' }}
+        exclude:
+          - environment: ''
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Set environment URL
+        id: env-url
+        run: |
+          if [ "${{ matrix.environment }}" = "production" ]; then
+            echo "url=https://n8n-converter.com" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging-n8n-converter.vercel.app" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Run health checks
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "🔍 Running health checks for ${{ matrix.environment }}..."
+          npm run cicd:health-check
+          
+      - name: Check application endpoints
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "🌐 Checking critical endpoints..."
+          
+          # Health endpoint
+          if ! curl -f "$APP_URL/api/health"; then
+            echo "❌ Health endpoint failed"
+            exit 1
+          fi
+          
+          # Database health
+          if ! curl -f "$APP_URL/api/health/database"; then
+            echo "❌ Database health check failed"
+            exit 1
+          fi
+          
+          # Storage health
+          if ! curl -f "$APP_URL/api/health/storage"; then
+            echo "❌ Storage health check failed"
+            exit 1
+          fi
+          
+          # Main application
+          if ! curl -f "$APP_URL/"; then
+            echo "❌ Main application not accessible"
+            exit 1
+          fi
+          
+          echo "✅ All endpoints healthy"
+          
+      - name: Test response times
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "⏱️ Testing response times..."
+          
+          # Test main page response time
+          RESPONSE_TIME=$(curl -o /dev/null -s -w '%{time_total}' "$APP_URL/")
+          RESPONSE_MS=$(echo "$RESPONSE_TIME * 1000" | bc)
+          
+          echo "Response time: ${RESPONSE_MS}ms"
+          
+          # Check if response time is acceptable (< 3 seconds)
+          if (( $(echo "$RESPONSE_TIME > 3" | bc -l) )); then
+            echo "⚠️ Response time is slow: ${RESPONSE_MS}ms"
+            # Don't fail for slow response, just warn
+          else
+            echo "✅ Response time is acceptable: ${RESPONSE_MS}ms"
+          fi
+          
+      - name: Upload health check results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: health-check-${{ matrix.environment }}-${{ github.run_number }}
+          path: |
+            health-check-*.json
+            health-check-*.log
+
+  # Performance monitoring
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    if: github.event.inputs.check_type == 'performance' || github.event.inputs.check_type == 'all' || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        environment: 
+          - ${{ github.event.inputs.environment == 'staging' && 'staging' || github.event.inputs.environment == 'production' && 'production' || github.event.inputs.environment == 'both' && 'staging' || 'production' }}
+          - ${{ github.event.inputs.environment == 'both' && 'production' || '' }}
+        exclude:
+          - environment: ''
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set environment URL
+        id: env-url
+        run: |
+          if [ "${{ matrix.environment }}" = "production" ]; then
+            echo "url=https://n8n-converter.com" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging-n8n-converter.vercel.app" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Run Lighthouse audit
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            ${{ steps.env-url.outputs.url }}
+            ${{ steps.env-url.outputs.url }}/app
+          configPath: './lighthouse.config.js'
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          
+      - name: Performance budget check
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "📊 Checking performance budget..."
+          
+          # This would typically parse Lighthouse results
+          # For now, we'll do basic performance checks
+          
+          # Check if main page loads within budget
+          LOAD_TIME=$(curl -o /dev/null -s -w '%{time_total}' "$APP_URL/")
+          
+          if (( $(echo "$LOAD_TIME > 5" | bc -l) )); then
+            echo "❌ Performance budget exceeded: ${LOAD_TIME}s"
+            exit 1
+          else
+            echo "✅ Performance within budget: ${LOAD_TIME}s"
+          fi
+
+  # Security monitoring
+  security-monitoring:
+    name: Security Monitoring
+    runs-on: ubuntu-latest
+    if: github.event.inputs.check_type == 'security' || github.event.inputs.check_type == 'all' || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        environment: 
+          - ${{ github.event.inputs.environment == 'staging' && 'staging' || github.event.inputs.environment == 'production' && 'production' || github.event.inputs.environment == 'both' && 'staging' || 'production' }}
+          - ${{ github.event.inputs.environment == 'both' && 'production' || '' }}
+        exclude:
+          - environment: ''
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set environment URL
+        id: env-url
+        run: |
+          if [ "${{ matrix.environment }}" = "production" ]; then
+            echo "url=https://n8n-converter.com" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging-n8n-converter.vercel.app" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Check security headers
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "🔒 Checking security headers..."
+          
+          HEADERS=$(curl -I "$APP_URL/" 2>/dev/null)
+          
+          # Check for required security headers
+          MISSING_HEADERS=""
+          
+          if ! echo "$HEADERS" | grep -i "x-frame-options"; then
+            MISSING_HEADERS="$MISSING_HEADERS X-Frame-Options"
+          fi
+          
+          if ! echo "$HEADERS" | grep -i "x-content-type-options"; then
+            MISSING_HEADERS="$MISSING_HEADERS X-Content-Type-Options"
+          fi
+          
+          if ! echo "$HEADERS" | grep -i "strict-transport-security"; then
+            MISSING_HEADERS="$MISSING_HEADERS Strict-Transport-Security"
+          fi
+          
+          if [ -n "$MISSING_HEADERS" ]; then
+            echo "⚠️ Missing security headers:$MISSING_HEADERS"
+            # Don't fail for missing headers in monitoring, just warn
+          else
+            echo "✅ All security headers present"
+          fi
+          
+      - name: Check SSL configuration
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "🔐 Checking SSL configuration..."
+          
+          # Extract domain from URL
+          DOMAIN=$(echo "$APP_URL" | sed 's|https\?://||' | sed 's|/.*||')
+          
+          # Check SSL certificate
+          SSL_INFO=$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN:443" 2>/dev/null | openssl x509 -noout -dates)
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ SSL certificate is valid"
+            echo "$SSL_INFO"
+          else
+            echo "❌ SSL certificate check failed"
+            exit 1
+          fi
+          
+      - name: Basic security scan
+        env:
+          APP_URL: ${{ steps.env-url.outputs.url }}
+        run: |
+          echo "🛡️ Running basic security checks..."
+          
+          # Check for common security issues
+          RESPONSE=$(curl -s "$APP_URL/")
+          
+          # Check for potential information disclosure
+          if echo "$RESPONSE" | grep -i "error\|exception\|stack trace"; then
+            echo "⚠️ Potential information disclosure detected"
+          fi
+          
+          # Check for missing security measures
+          if ! echo "$RESPONSE" | grep -i "content-security-policy"; then
+            echo "⚠️ Content Security Policy not detected in response"
+          fi
+          
+          echo "✅ Basic security scan completed"
+
+  # Uptime monitoring
+  uptime-monitoring:
+    name: Uptime Monitoring
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.check_type == 'all'
+    
+    steps:
+      - name: Check staging uptime
+        run: |
+          echo "📡 Checking staging uptime..."
+          
+          if curl -f https://staging-n8n-converter.vercel.app/api/health; then
+            echo "✅ Staging is up"
+          else
+            echo "❌ Staging is down"
+            echo "staging_down=true" >> $GITHUB_ENV
+          fi
+          
+      - name: Check production uptime
+        run: |
+          echo "📡 Checking production uptime..."
+          
+          if curl -f https://n8n-converter.com/api/health; then
+            echo "✅ Production is up"
+          else
+            echo "❌ Production is down"
+            echo "production_down=true" >> $GITHUB_ENV
+          fi
+          
+      - name: Alert on downtime
+        if: env.staging_down == 'true' || env.production_down == 'true'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_ALERTS }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          text: |
+            🚨 Service Downtime Detected
+            
+            Staging: ${{ env.staging_down == 'true' && '❌ DOWN' || '✅ UP' }}
+            Production: ${{ env.production_down == 'true' && '❌ DOWN' || '✅ UP' }}
+            
+            Please investigate immediately.
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_ALERTS }}
+
+  # Database monitoring
+  database-monitoring:
+    name: Database Monitoring
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.check_type == 'all'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Check database health
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "🗄️ Checking database health..."
+          
+          # Test database connectivity
+          node -e "
+            const { createClient } = require('@supabase/supabase-js');
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL,
+              process.env.SUPABASE_SERVICE_ROLE_KEY
+            );
+            
+            Promise.all([
+              supabase.from('profiles').select('count').limit(1),
+              supabase.from('projects').select('count').limit(1),
+              supabase.from('generation_logs').select('count').limit(1)
+            ])
+            .then(results => {
+              const errors = results.filter(r => r.error);
+              if (errors.length > 0) {
+                console.error('❌ Database connectivity issues:', errors);
+                process.exit(1);
+              } else {
+                console.log('✅ Database connectivity healthy');
+              }
+            })
+            .catch(err => {
+              console.error('❌ Database check failed:', err);
+              process.exit(1);
+            });
+          "
+
+  # Generate monitoring report
+  monitoring-report:
+    name: Generate Monitoring Report
+    runs-on: ubuntu-latest
+    needs: [health-monitoring, performance-monitoring, security-monitoring, uptime-monitoring, database-monitoring]
+    if: always()
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        
+      - name: Generate monitoring summary
+        run: |
+          echo "# 📊 Monitoring Report" > monitoring-report.md
+          echo "" >> monitoring-report.md
+          echo "**Date:** $(date -u)" >> monitoring-report.md
+          echo "**Trigger:** ${{ github.event_name }}" >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          
+          echo "## Results Summary" >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          
+          # Check job results
+          if [ "${{ needs.health-monitoring.result }}" = "success" ]; then
+            echo "✅ **Health Monitoring:** All checks passed" >> monitoring-report.md
+          else
+            echo "❌ **Health Monitoring:** Issues detected" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.performance-monitoring.result }}" = "success" ]; then
+            echo "✅ **Performance Monitoring:** Within acceptable limits" >> monitoring-report.md
+          else
+            echo "⚠️ **Performance Monitoring:** Performance issues detected" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.security-monitoring.result }}" = "success" ]; then
+            echo "✅ **Security Monitoring:** No security issues found" >> monitoring-report.md
+          else
+            echo "⚠️ **Security Monitoring:** Security concerns detected" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.uptime-monitoring.result }}" = "success" ]; then
+            echo "✅ **Uptime Monitoring:** All services operational" >> monitoring-report.md
+          else
+            echo "❌ **Uptime Monitoring:** Service downtime detected" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.database-monitoring.result }}" = "success" ]; then
+            echo "✅ **Database Monitoring:** Database healthy" >> monitoring-report.md
+          else
+            echo "❌ **Database Monitoring:** Database issues detected" >> monitoring-report.md
+          fi
+          
+          echo "" >> monitoring-report.md
+          echo "## Recommendations" >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          
+          # Add recommendations based on failures
+          if [ "${{ needs.health-monitoring.result }}" != "success" ]; then
+            echo "- Investigate health check failures and resolve underlying issues" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.performance-monitoring.result }}" != "success" ]; then
+            echo "- Review performance metrics and optimize slow components" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.security-monitoring.result }}" != "success" ]; then
+            echo "- Address security concerns and update security configurations" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.uptime-monitoring.result }}" != "success" ]; then
+            echo "- Investigate service downtime and implement redundancy measures" >> monitoring-report.md
+          fi
+          
+          if [ "${{ needs.database-monitoring.result }}" != "success" ]; then
+            echo "- Check database performance and connection stability" >> monitoring-report.md
+          fi
+          
+          echo "" >> monitoring-report.md
+          echo "---" >> monitoring-report.md
+          echo "*This report was generated automatically by the monitoring workflow.*" >> monitoring-report.md
+          
+      - name: Upload monitoring report
+        uses: actions/upload-artifact@v3
+        with:
+          name: monitoring-report-${{ github.run_number }}
+          path: monitoring-report.md
+          
+      - name: Notify on critical issues
+        if: needs.health-monitoring.result == 'failure' || needs.uptime-monitoring.result == 'failure' || needs.database-monitoring.result == 'failure'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_ALERTS }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          text: |
+            🚨 Critical Monitoring Issues Detected
+            
+            Health: ${{ needs.health-monitoring.result }}
+            Performance: ${{ needs.performance-monitoring.result }}
+            Security: ${{ needs.security-monitoring.result }}
+            Uptime: ${{ needs.uptime-monitoring.result }}
+            Database: ${{ needs.database-monitoring.result }}
+            
+            Please investigate immediately.
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_ALERTS }}

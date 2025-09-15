@@ -1,0 +1,150 @@
+---
+
+# **Frontend Guidelines – n8n Workflow to Standalone Codebase Converter**
+
+**Project Name:** n8n Workflow to Standalone Codebase Converter
+**Prepared By:** \Nithish S
+**Date:**25/08/2025
+**Version:** 1.0
+
+---
+
+## **1. Overview**
+
+The frontend will provide a clean, user-friendly interface for developers to:
+
+* Upload n8n workflow JSON files.
+* Configure project settings (e.g., output directory, environment variables).
+* Trigger generation of the standalone Node.js codebase.
+* Monitor generation progress and see logs or errors.
+
+The frontend is **optional but recommended** for ease of use, especially if targeting users who are not comfortable with CLI tools.
+
+---
+
+## **2. Target Users**
+
+* Developers who want to convert n8n workflows into standalone Node.js projects.
+* Technical users familiar with Node.js but not necessarily with the n8n runtime.
+* Users who want a simple UI to manage multiple workflow conversions.
+
+---
+
+## **3. Design Principles**
+
+1. **Simplicity** – Minimal interface; focus on functionality.
+2. **Clarity** – Clear labels, tooltips, and status messages.
+3. **Responsiveness** – Works on both desktop and tablet screens.
+4. **Modularity** – Frontend can be replaced or updated without affecting backend logic.
+5. **Accessibility** – Basic keyboard navigation and readable fonts.
+
+---
+
+## **4. UI Components**
+
+| Component                          | Description                                                     | Notes                                            |
+| ---------------------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| **Header**                         | Project title, optional branding                                | Fixed top                                        |
+| **Workflow Upload Panel**          | Drag-and-drop or file selection for JSON workflow               | Show accepted file type `.json`                  |
+| **Configuration Panel**            | Input fields for output folder, environment variables, API keys | Can use collapsible panels for advanced settings |
+| **Generate Button**                | Starts the code generation process                              | Disabled until workflow JSON is uploaded         |
+| **Progress & Logs Panel**          | Shows real-time generation progress and errors                  | Scrollable area for console-style logs           |
+| **Download / Open Project Button** | Allows opening the generated project folder or downloading ZIP  | Optional, based on project setup                 |
+| **Footer**                         | Licensing info, credits to n8n                                  | Small, non-intrusive                             |
+
+---
+
+## **5. Frontend Flow**
+
+1. User opens the web page.
+2. Upload workflow JSON via drag-and-drop or file select.
+3. Optional: Configure output directory, credentials, or other settings.
+4. Click **Generate**.
+5. Show **progress log** as backend generates Node.js code.
+6. On completion:
+
+   * Show success message.
+   * Provide **link to download** ZIP or **button to open project folder**.
+
+---
+
+## **6. Technology Stack**
+
+* **Framework:** React.js (for modular components)
+* **Styling:** Tailwind CSS or standard CSS modules
+* **State Management:** React Context or Zustand (lightweight)
+* **File Handling:** Browser `FileReader` API for JSON upload
+* **API Communication:** Axios or Fetch for backend communication
+* **Optional:** Electron if desktop app is preferred
+
+---
+
+## **7. Component Guidelines**
+
+### 7.1 File Upload Component
+
+* Accepts only `.json` files.
+* Shows preview of workflow name and node count.
+* Handles validation errors gracefully.
+
+### 7.2 Configuration Component
+
+* Fields for environment variables, API keys, output folder.
+* Collapsible for advanced users.
+* Default values for optional fields.
+
+### 7.3 Generate Button
+
+* Disabled until a valid JSON is uploaded.
+* Shows spinner during generation.
+* Should handle API errors and display meaningful messages.
+
+### 7.4 Progress / Logs
+
+* Real-time output from backend during code generation.
+* Scrollable console-style area.
+* Color-coded messages:
+
+  * Info: blue
+  * Warning: yellow
+  * Error: red
+
+### 7.5 Success / Result
+
+* Show success message with summary:
+
+  * Number of nodes converted
+  * Workflow name
+  * Output path or download link
+
+---
+
+## **8. UX Recommendations**
+
+* Use tooltips to explain fields like “Output Directory” or “Environment Variables.”
+* Keep minimal text; rely on icons for common actions (upload, download, settings).
+* Display error messages in clear, human-readable format.
+* Optionally, allow users to save settings for repeated workflow conversions.
+
+---
+
+## **9. Accessibility & Responsiveness**
+
+* Ensure readable font size (≥14px).
+* Contrast ratio ≥ 4.5:1 for text and background.
+* Keyboard navigation for all actionable elements.
+* Responsive design:
+
+  * Desktop: Multi-column layout for upload and configuration panels.
+  * Mobile/Tablet: Single-column stack with collapsible panels.
+
+---
+
+## **10. Future Enhancements**
+
+* Workflow visualization of nodes after JSON upload.
+* Option to edit node configuration directly from frontend.
+* Multi-workflow batch upload and conversion.
+* Dark mode for user preference.
+
+---

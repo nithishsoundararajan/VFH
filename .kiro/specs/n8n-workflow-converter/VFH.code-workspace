@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		}
+	],
+	"settings": {
+		"kiroAgent.configureMCP": "Enabled",
+		"deno.codeLens.testArgs": [
+			"--allow-all",
+			"--no-check",
+			"{   \"deno.enable\": false,   \"deno.enablePaths\": [     \"./supabase/functions\"   ],   \"deno.lint\": true,   \"deno.unstable\": false }"
+		],
+		"deno.config": " deno.json n8n-workflow-converter/supabase/functions/deno.json",
+		"kiroAgent.agentAutonomy": "Supervised",
+		"kiroAgent.agentModelSelection": "claude-sonnet-4"
+	}
+}

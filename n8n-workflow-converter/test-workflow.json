@@ -1,0 +1,73 @@
+{
+  "name": "Test Workflow",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {}
+    },
+    {
+      "id": "2", 
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "parameters": {
+        "url": "https://api.example.com/data",
+        "method": "GET"
+      },
+      "credentials": {
+        "httpBasicAuth": "test-credential"
+      }
+    },
+    {
+      "id": "3",
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "processed",
+              "value": "true"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "id": "test-workflow-123"
+}

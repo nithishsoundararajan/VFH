@@ -1,0 +1,228 @@
+
+---
+
+# **Backend Structure Document – n8n Workflow to Standalone Codebase Converter**
+
+**Project Name:** n8n Workflow to Standalone Codebase Converter
+**Prepared By:** \Nithish S
+**Date:**25/08/2025
+**Version:** 1.0
+
+---
+
+## **1. Overview**
+
+The backend is responsible for:
+
+* Accepting n8n workflow JSON uploads.
+* Parsing workflow JSON to identify nodes, triggers, and connections.
+* Mapping each node to its corresponding implementation in the official n8n packages.
+* Generating a fully functional standalone Node.js codebase.
+* Managing project configurations, logging, and error handling.
+* Providing APIs for frontend or CLI interactions.
+
+---
+
+## **2. Technology Stack**
+
+* **Runtime:** Node.js (v20+)
+* **Package Management:** npm or yarn
+* **n8n Packages:** `n8n-core`, `n8n-workflow`
+* **Server Framework:** Express.js (for API-based frontend integration)
+* **File System:** Node.js `fs` module
+* **Optional:** `dotenv` for environment variable management
+
+---
+
+## **3. Folder Structure**
+
+```
+backend/
+├── src/
+│   ├── controllers/       # Handles API requests and main operations
+│   │   └── workflowController.js
+│   ├── services/          # Core business logic modules
+│   │   ├── parserService.js
+│   │   ├── nodeMapperService.js
+│   │   ├── codeGeneratorService.js
+│   │   ├── triggerService.js
+│   │   └── loggerService.js
+│   ├── utils/             # Helper functions
+│   │   └── fileUtils.js
+│   ├── config/            # Configuration and credentials
+│   │   └── config.js
+│   └── routes/            # API routes
+│       └── workflowRoutes.js
+├── generated_projects/    # Output folder for standalone projects
+├── app.js                 # Entry point for backend server
+├── package.json
+└── README.md
+```
+
+---
+
+## **4. Module Details**
+
+### 4.1 Controllers
+
+**`workflowController.js`**
+
+* Handles API endpoints for frontend or CLI commands.
+* Responsibilities:
+
+  * Receive workflow JSON upload.
+  * Call parser service to validate and extract nodes.
+  * Trigger code generation.
+  * Return status, progress, and logs to frontend.
+
+---
+
+### 4.2 Services
+
+**4.2.1 Parser Service (`parserService.js`)**
+
+* Reads workflow JSON and validates structure.
+* Extracts nodes, triggers, connections, and credentials.
+* Output: structured workflow object for node mapping.
+
+**4.2.2 Node Mapper Service (`nodeMapperService.js`)**
+
+* Maps workflow nodes to their corresponding n8n package implementation.
+* Supports standard nodes from official n8n packages.
+* Can be extended for custom/community nodes.
+* Output: Node execution modules and import statements.
+
+**4.2.3 Code Generator Service (`codeGeneratorService.js`)**
+
+* Generates folder structure and scripts for standalone Node.js project.
+* Creates:
+
+  * `src/nodes` – Individual node modules.
+  * `src/triggers` – Trigger modules.
+  * `src/workflows` – Workflow executor scripts.
+  * `main.js` – Entry point to execute workflow.
+* Injects proper imports and wiring between nodes.
+
+**4.2.4 Trigger Service (`triggerService.js`)**
+
+* Implements triggers from workflow JSON (cron, webhook, etc.) using Node.js timers or Express endpoints.
+* Integrates with code generator to produce standalone trigger scripts.
+
+**4.2.5 Logger Service (`loggerService.js`)**
+
+* Central logging mechanism for backend process and code generation.
+* Supports console logs and optional file-based logs.
+* Color-coded messages for info, warning, and errors.
+
+---
+
+### 4.3 Utilities
+
+**`fileUtils.js`**
+
+* File read/write operations.
+* Folder creation and management for generated projects.
+* JSON validation and formatting.
+
+---
+
+### 4.4 Configuration
+
+**`config.js`**
+
+* Stores paths, environment variables, API keys, and output settings.
+* Example structure:
+
+```javascript
+module.exports = {
+    GENERATED_PROJECTS_PATH: './generated_projects',
+    NODE_PACKAGES_PATH: './node_modules',
+    DEFAULT_ENV: 'development'
+};
+```
+
+---
+
+### 4.5 Routes
+
+**`workflowRoutes.js`**
+
+* Defines API endpoints:
+
+  * `POST /upload` – Upload workflow JSON.
+  * `POST /generate` – Trigger code generation.
+  * `GET /status/:workflowId` – Fetch generation status/logs.
+
+---
+
+## **5. Backend Flow**
+
+1. **Frontend or CLI** sends workflow JSON to `/upload`.
+2. **Controller** calls `parserService` to validate and extract workflow.
+3. **Controller** calls `nodeMapperService` to map nodes to n8n package logic.
+4. **Controller** calls `codeGeneratorService` to create a standalone project.
+5. **TriggerService** generates code for triggers.
+6. **LoggerService** logs all progress and errors.
+7. **Backend** returns success/failure status and optionally ZIP or folder path of generated project.
+
+---
+
+## **6. API Contract Example**
+
+**POST /upload**
+
+* **Request:** JSON file in multipart/form-data.
+* **Response:**
+
+```json
+{
+    "status": "success",
+    "workflowId": "abc123",
+    "message": "Workflow uploaded and parsed successfully."
+}
+```
+
+**POST /generate**
+
+* **Request:** `{ "workflowId": "abc123", "outputPath": "./generated_projects" }`
+* **Response:**
+
+```json
+{
+    "status": "success",
+    "message": "Standalone project generated successfully.",
+    "projectPath": "./generated_projects/myWorkflowProject"
+}
+```
+
+**GET /status/\:workflowId**
+
+* **Response:**
+
+```json
+{
+    "workflowId": "abc123",
+    "status": "in_progress",
+    "logs": ["Parsing nodes...", "Mapping nodes..."]
+}
+```
+
+---
+
+## **7. Security Considerations**
+
+* Validate JSON structure to prevent malicious inputs.
+* Ensure environment variables (API keys) are not hardcoded in generated code.
+* Restrict file system access to safe directories (`generated_projects`).
+* Sanitize logs to avoid exposing sensitive data.
+
+---
+
+## **8. Future Enhancements**
+
+* Support community/custom nodes.
+* Advanced workflow execution features (parallel nodes, retry logic).
+* Optional persistence layer (database) for workflow status and logs.
+* CLI tool for developers to run code generation locally without frontend.
+
+---

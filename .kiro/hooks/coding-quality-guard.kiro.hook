@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "name": "Coding Quality Guard",
+  "description": "Monitors code changes to ensure agents don't rewrite entire files unnecessarily, avoid duplicate columns in SQL queries, prevent malware dependencies, and protect API keys from exposure",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.js",
+      "**/*.ts",
+      "**/*.sql",
+      "**/*.json",
+      "package.json",
+      "package-lock.json",
+      "**/*.env*",
+      "**/*.config.*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the recent code changes and ensure the following quality standards are met:\n\n1. **Incremental Changes**: Check if the agent made unnecessary complete file rewrites when only small changes were needed. Flag any cases where entire files were rewritten for minor modifications.\n\n2. **SQL Query Quality**: For any SQL queries, verify there are no duplicate columns in SELECT statements, CREATE TABLE statements, or other SQL operations.\n\n3. **Dependency Security**: For package.json changes, verify that any new dependencies are from trusted sources and not potential malware. Check for suspicious package names, typos of popular packages, or packages with very low download counts.\n\n4. **API Key Protection**: Scan all code files for exposed API keys, tokens, passwords, or other sensitive credentials. Ensure they are properly stored in environment variables and not hardcoded.\n\n5. **MCP Tool Usage**: When MCP tools are being used, ensure the agent is using them efficiently without creating redundant operations or duplicate data structures.\n\nIf any issues are found, provide specific feedback on what needs to be corrected and suggest the proper approach."
+  }
+}

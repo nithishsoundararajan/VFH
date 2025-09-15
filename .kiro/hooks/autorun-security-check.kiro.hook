@@ -1,0 +1,36 @@
+{
+  "enabled": true,
+  "name": "Autorun Security Scanner",
+  "description": "Monitors for hidden autorun instructions in IDE configuration files that could automatically execute malicious code when a folder is opened",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      ".vscode/tasks.json",
+      ".vscode/launch.json",
+      ".vscode/settings.json",
+      ".vscode/extensions.json",
+      ".idea/**/*",
+      "**/.autorun",
+      "**/autorun.*",
+      "package.json",
+      "**/.npmrc",
+      "**/.yarnrc",
+      "**/yarn.lock",
+      "**/package-lock.json",
+      "**/.env",
+      "**/.env.*",
+      "**/Makefile",
+      "**/makefile",
+      "**/.bashrc",
+      "**/.zshrc",
+      "**/.profile",
+      "**/.gitconfig",
+      "**/.git/hooks/*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the modified files for any hidden autorun instructions or configurations that could automatically execute code when the IDE or folder is opened. Look for:\n\n1. VS Code tasks.json with \"runOn\": \"folderOpen\" or similar autorun triggers\n2. Launch configurations that auto-start processes\n3. Settings that enable automatic script execution\n4. Package.json scripts with \"preinstall\", \"postinstall\", or similar hooks\n5. Hidden autorun files or directories\n6. Environment files with suspicious executable paths\n7. Git hooks that could run malicious code\n8. IDE extensions or plugins that auto-execute\n9. Makefiles with automatic execution rules\n10. Shell configuration files with suspicious additions\n\nIf any potential autorun security risks are found, provide:\n- Exact location and line numbers\n- Description of the security risk\n- Recommended remediation steps\n- Severity assessment (LOW/MEDIUM/HIGH/CRITICAL)\n\nFocus on detecting configurations that could lead to automatic code execution without explicit user consent."
+  }
+}

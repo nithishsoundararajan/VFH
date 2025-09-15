@@ -1,0 +1,153 @@
+
+---
+
+# **Software Requirements Document (SRD)**
+
+**Project Name:** n8n Workflow to Standalone Codebase Converter
+**Prepared By:** Nithish S
+**Date:**25/08/2025
+**Version:** 1.0
+
+---
+
+## **1. Introduction**
+
+### 1.1 Purpose
+
+The purpose of this software is to convert n8n workflow JSON files into standalone Node.js codebases that execute workflows independently of the n8n runtime. This enables developers to run, integrate, and maintain workflows as independent projects while leveraging official n8n node implementations.
+
+### 1.2 Scope
+
+* Input: n8n workflow JSON files.
+* Output: Standalone Node.js project with modular node scripts, workflow executor, and triggers.
+* Support for environment-based configuration and logging.
+* Optional frontend UI for uploading workflows and triggering code generation.
+
+**Out of Scope:**
+
+* GUI workflow editor.
+* Community/custom nodes not available in official n8n packages.
+* Database storage for workflows (future enhancement).
+
+### 1.3 Definitions / Abbreviations
+
+* **n8n:** Open-source workflow automation platform.
+* **Workflow JSON:** Exported workflow configuration from n8n.
+* **Node:** Single task or function in n8n workflow.
+* **Trigger:** Node that initiates workflow execution.
+
+---
+
+## **2. System Overview**
+
+The system consists of two primary modules:
+
+1. **Backend** – Parses workflow JSON, maps nodes, generates standalone code, executes workflows, and handles triggers.
+2. **Frontend** – Provides a user-friendly interface to upload workflows, configure settings, monitor progress, and access generated projects.
+
+The system allows developers to generate, run, and extend workflows as standalone Node.js projects without requiring the n8n runtime.
+
+---
+
+## **3. Functional Requirements (FR)**
+
+| FR ID | Requirement          | Description                                                              | Priority |
+| ----- | -------------------- | ------------------------------------------------------------------------ | -------- |
+| FR1   | Workflow JSON Upload | Accept valid n8n workflow JSON files.                                    | High     |
+| FR2   | Node Parsing         | Parse nodes, triggers, connections, and credentials from JSON.           | High     |
+| FR3   | Node Mapping         | Map each node to official n8n package implementation.                    | High     |
+| FR4   | Code Generation      | Generate a standalone Node.js project with folder structure and scripts. | High     |
+| FR5   | Workflow Execution   | Execute nodes in correct sequence with proper data flow.                 | High     |
+| FR6   | Trigger Handling     | Implement workflow triggers (cron, webhook) in generated code.           | High     |
+| FR7   | Logging              | Provide execution and error logs during generation and runtime.          | Medium   |
+| FR8   | Configuration        | Support environment-based credentials and settings.                      | Medium   |
+| FR9   | Attribution          | Include proper licensing and credit to n8n.                              | High     |
+| FR10  | Extensibility        | Enable future addition of workflows and nodes.                           | Medium   |
+
+---
+
+## **4. Non-Functional Requirements (NFR)**
+
+| NFR ID | Requirement     | Description                                                      |
+| ------ | --------------- | ---------------------------------------------------------------- |
+| NFR1   | Performance     | Generated code should execute workflows efficiently.             |
+| NFR2   | Maintainability | Modular folder structure and code to allow updates.              |
+| NFR3   | Portability     | Generated project should run on Linux, Windows, and Mac.         |
+| NFR4   | Security        | Environment variables for credentials; prevent code injection.   |
+| NFR5   | Usability       | Frontend (optional) should be simple, intuitive, and responsive. |
+| NFR6   | Reliability     | Handle errors gracefully and log issues for debugging.           |
+
+---
+
+## **5. System Architecture**
+
+**Modules:**
+
+1. **Frontend:** React.js, Tailwind CSS, Axios, FileReader API.
+2. **Backend:** Node.js, Express.js, n8n-core, n8n-workflow, dotenv, fs module.
+3. **Generated Project:** Node.js scripts for nodes, triggers, workflow executor, and main entry point.
+
+**Flow Diagram (Conceptual):**
+
+```
+[User Uploads Workflow JSON] --> [Backend Parser Service] --> [Node Mapper Service] 
+--> [Code Generator Service] --> [Generated Standalone Project] --> [Workflow Execution]
+```
+
+---
+
+## **6. System Requirements**
+
+### 6.1 Hardware Requirements
+
+* Minimum 4GB RAM
+* 2-core CPU
+* 100MB disk space for backend
+* Additional disk space for generated projects
+
+### 6.2 Software Requirements
+
+* Node.js v20+
+* npm or yarn
+* Browser (Chrome, Firefox, Edge) for frontend
+* Optional: Docker for containerization
+
+### 6.3 Security Requirements
+
+* Validate workflow JSON to prevent malicious code execution.
+* Credentials and API keys stored in environment variables.
+* Restrict file system access to safe directories.
+
+---
+
+## **7. Use Cases**
+
+1. **UC1: Upload Workflow JSON** – Developer uploads workflow JSON; backend validates and parses it.
+2. **UC2: Map Nodes** – System maps workflow nodes to official n8n package implementations.
+3. **UC3: Generate Project** – Backend generates standalone Node.js project with all modules.
+4. **UC4: Execute Workflow** – Generated project executes workflow with triggers and logs outputs.
+5. **UC5: Configure Environment** – Developer sets credentials and configurations in `.env` or `config.js`.
+
+---
+
+## **8. API Endpoints**
+
+| Endpoint                | Method | Purpose                                       |
+| ----------------------- | ------ | --------------------------------------------- |
+| `/upload`               | POST   | Upload workflow JSON.                         |
+| `/generate`             | POST   | Generate standalone Node.js project.          |
+| `/status/:workflowId`   | GET    | Get status and logs of generation.            |
+| `/download/:workflowId` | GET    | Download generated project as ZIP (optional). |
+
+---
+
+## **9. Future Enhancements**
+
+* Add support for community/custom nodes.
+* CLI tool for local workflow conversion.
+* Multi-workflow batch processing.
+* Advanced logging and retry mechanism for workflows.
+* Integration with cloud storage for generated projects.
+* Frontend visualization of workflows and nodes.
+
+---

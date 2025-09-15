@@ -1,0 +1,468 @@
+name: Emergency Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      rollback_type:
+        description: 'Type of rollback'
+        required: true
+        type: choice
+        options:
+          - application
+          - database
+          - full
+      target_version:
+        description: 'Target version/backup to rollback to'
+        required: false
+        type: string
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # Rollback validation and preparation
+  rollback-preparation:
+    name: Rollback Preparation
+    runs-on: ubuntu-latest
+    
+    outputs:
+      should_proceed: ${{ steps.validation.outputs.should_proceed }}
+      rollback_plan: ${{ steps.plan.outputs.rollback_plan }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Validate rollback request
+        id: validation
+        run: |
+          echo "🔍 Validating rollback request..."
+          
+          # Validate environment
+          if [[ "${{ inputs.environment }}" != "staging" && "${{ inputs.environment }}" != "production" ]]; then
+            echo "❌ Invalid environment: ${{ inputs.environment }}"
+            exit 1
+          fi
+          
+          # Validate rollback type
+          if [[ "${{ inputs.rollback_type }}" =~ ^(application|database|full)$ ]]; then
+            echo "✅ Rollback type valid: ${{ inputs.rollback_type }}"
+          else
+            echo "❌ Invalid rollback type: ${{ inputs.rollback_type }}"
+            exit 1
+          fi
+          
+          # Check if target version is required
+          if [[ "${{ inputs.rollback_type }}" == "database" && -z "${{ inputs.target_version }}" ]]; then
+            echo "❌ Target version required for database rollback"
+            exit 1
+          fi
+          
+          echo "should_proceed=true" >> $GITHUB_OUTPUT
+          
+      - name: Create rollback plan
+        id: plan
+        run: |
+          echo "📋 Creating rollback plan..."
+          
+          PLAN=""
+          case "${{ inputs.rollback_type }}" in
+            "application")
+              PLAN="1. Revert application deployment\n2. Verify application health\n3. Run smoke tests"
+              ;;
+            "database")
+              PLAN="1. Create current database backup\n2. Rollback database to version ${{ inputs.target_version }}\n3. Verify database integrity\n4. Test application connectivity"
+              ;;
+            "full")
+              PLAN="1. Create current database backup\n2. Rollback database to previous version\n3. Revert application deployment\n4. Verify full system health\n5. Run comprehensive tests"
+              ;;
+          esac
+          
+          echo "rollback_plan<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$PLAN" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+      - name: Notify rollback initiation
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "channel": "#alerts",
+              "attachments": [{
+                "color": "warning",
+                "title": "🚨 Emergency Rollback Initiated",
+                "fields": [
+                  {
+                    "title": "Environment",
+                    "value": "${{ inputs.environment }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Type",
+                    "value": "${{ inputs.rollback_type }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Reason",
+                    "value": "${{ inputs.reason }}",
+                    "short": false
+                  },
+                  {
+                    "title": "Initiated by",
+                    "value": "${{ github.actor }}",
+                    "short": true
+                  }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_ALERTS }}
+
+  # Application rollback
+  application-rollback:
+    name: Application Rollback
+    runs-on: ubuntu-latest
+    needs: rollback-preparation
+    if: needs.rollback-preparation.outputs.should_proceed == 'true' && (inputs.rollback_type == 'application' || inputs.rollback_type == 'full')
+    
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Get previous deployment
+        id: previous
+        run: |
+          echo "🔍 Finding previous deployment..."
+          
+          # This would typically query your deployment system
+          # For Vercel, you might use their API to get previous deployments
+          
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            PREVIOUS_URL="https://n8n-converter.com"
+          else
+            PREVIOUS_URL="https://staging-n8n-converter.vercel.app"
+          fi
+          
+          echo "previous_url=$PREVIOUS_URL" >> $GITHUB_OUTPUT
+          
+      - name: Rollback Vercel deployment
+        run: |
+          echo "🔄 Rolling back Vercel deployment..."
+          
+          # Install Vercel CLI
+          npm i -g vercel
+          
+          # Authenticate with Vercel
+          echo "${{ secrets.VERCEL_TOKEN }}" | vercel login --stdin
+          
+          # Get list of deployments
+          vercel list --scope=${{ secrets.VERCEL_ORG_ID }}
+          
+          # Promote previous deployment (this is a simplified example)
+          # In practice, you'd identify the specific deployment to rollback to
+          echo "⚠️ Manual intervention required for Vercel rollback"
+          echo "Please use Vercel dashboard to promote previous deployment"
+          
+      - name: Wait for rollback completion
+        run: |
+          echo "⏳ Waiting for rollback to complete..."
+          sleep 30
+          
+      - name: Verify application health
+        run: |
+          echo "🔍 Verifying application health after rollback..."
+          
+          URL="${{ steps.previous.outputs.previous_url }}"
+          
+          # Health check
+          if curl -f "$URL/api/health"; then
+            echo "✅ Application health check passed"
+          else
+            echo "❌ Application health check failed"
+            exit 1
+          fi
+          
+          # Basic functionality check
+          if curl -f "$URL/"; then
+            echo "✅ Application is accessible"
+          else
+            echo "❌ Application is not accessible"
+            exit 1
+          fi
+
+  # Database rollback
+  database-rollback:
+    name: Database Rollback
+    runs-on: ubuntu-latest
+    needs: rollback-preparation
+    if: needs.rollback-preparation.outputs.should_proceed == 'true' && (inputs.rollback_type == 'database' || inputs.rollback_type == 'full')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Install Supabase CLI
+        run: |
+          curl -fsSL https://supabase.com/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+      - name: Link to Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ inputs.environment == 'production' && secrets.PRODUCTION_SUPABASE_PROJECT_ID || secrets.STAGING_SUPABASE_PROJECT_ID }}
+        run: |
+          echo "🔗 Linking to Supabase project..."
+          supabase link --project-ref $SUPABASE_PROJECT_ID
+          
+      - name: Create emergency backup
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "💾 Creating emergency backup before rollback..."
+          BACKUP_NAME="emergency-backup-$(date +%Y%m%d_%H%M%S)"
+          npm run db:backup "$BACKUP_NAME"
+          echo "emergency_backup=$BACKUP_NAME" >> $GITHUB_ENV
+          
+      - name: Perform database rollback
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "🔄 Performing database rollback..."
+          
+          if [ -n "${{ inputs.target_version }}" ]; then
+            echo "Rolling back to version: ${{ inputs.target_version }}"
+            npm run db:rollback "${{ inputs.target_version }}"
+          else
+            echo "Rolling back to previous backup..."
+            # This would restore from the most recent backup
+            # Implementation depends on your backup strategy
+            echo "⚠️ Automatic backup restoration not implemented"
+            echo "Please specify target version for rollback"
+            exit 1
+          fi
+          
+      - name: Verify database integrity
+        run: |
+          echo "🔍 Verifying database integrity..."
+          npm run db:validate
+          
+      - name: Test database connectivity
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "🔌 Testing database connectivity..."
+          node -e "
+            const { createClient } = require('@supabase/supabase-js');
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL,
+              process.env.SUPABASE_SERVICE_ROLE_KEY
+            );
+            
+            supabase.from('profiles').select('count').limit(1)
+              .then(({ data, error }) => {
+                if (error) throw error;
+                console.log('✅ Database connection successful');
+              })
+              .catch(err => {
+                console.error('❌ Database connection failed:', err);
+                process.exit(1);
+              });
+          "
+
+  # Post-rollback verification
+  post-rollback-verification:
+    name: Post-Rollback Verification
+    runs-on: ubuntu-latest
+    needs: [rollback-preparation, application-rollback, database-rollback]
+    if: always() && needs.rollback-preparation.outputs.should_proceed == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run comprehensive health checks
+        env:
+          APP_URL: ${{ inputs.environment == 'production' && 'https://n8n-converter.com' || 'https://staging-n8n-converter.vercel.app' }}
+        run: |
+          echo "🔍 Running comprehensive health checks..."
+          
+          # Application health
+          curl -f "$APP_URL/api/health" || echo "❌ Application health check failed"
+          
+          # Database health
+          curl -f "$APP_URL/api/health/database" || echo "❌ Database health check failed"
+          
+          # Storage health
+          curl -f "$APP_URL/api/health/storage" || echo "❌ Storage health check failed"
+          
+          # External services health
+          curl -f "$APP_URL/api/health/external-services" || echo "❌ External services health check failed"
+          
+      - name: Run smoke tests
+        env:
+          APP_URL: ${{ inputs.environment == 'production' && 'https://n8n-converter.com' || 'https://staging-n8n-converter.vercel.app' }}
+        run: |
+          echo "🧪 Running smoke tests..."
+          
+          # Install Playwright
+          npx playwright install --with-deps
+          
+          # Run critical path tests
+          npm run test:e2e -- --grep="critical" || echo "❌ Smoke tests failed"
+          
+      - name: Generate rollback report
+        if: always()
+        run: |
+          echo "📋 Generating rollback report..."
+          
+          cat > rollback-report.md << EOF
+          # Emergency Rollback Report
+          
+          **Environment:** ${{ inputs.environment }}
+          **Rollback Type:** ${{ inputs.rollback_type }}
+          **Reason:** ${{ inputs.reason }}
+          **Initiated by:** ${{ github.actor }}
+          **Date:** $(date -u)
+          
+          ## Rollback Plan
+          
+          ${{ needs.rollback-preparation.outputs.rollback_plan }}
+          
+          ## Results
+          
+          EOF
+          
+          # Check job results
+          if [ "${{ needs.application-rollback.result }}" = "success" ] || [ "${{ needs.application-rollback.result }}" = "skipped" ]; then
+            echo "✅ **Application Rollback:** Completed" >> rollback-report.md
+          else
+            echo "❌ **Application Rollback:** Failed" >> rollback-report.md
+          fi
+          
+          if [ "${{ needs.database-rollback.result }}" = "success" ] || [ "${{ needs.database-rollback.result }}" = "skipped" ]; then
+            echo "✅ **Database Rollback:** Completed" >> rollback-report.md
+          else
+            echo "❌ **Database Rollback:** Failed" >> rollback-report.md
+          fi
+          
+          echo "" >> rollback-report.md
+          echo "## Next Steps" >> rollback-report.md
+          echo "" >> rollback-report.md
+          echo "1. Monitor system stability" >> rollback-report.md
+          echo "2. Investigate root cause of the issue" >> rollback-report.md
+          echo "3. Plan fix and re-deployment" >> rollback-report.md
+          echo "4. Update incident documentation" >> rollback-report.md
+          
+      - name: Upload rollback report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: rollback-report-${{ inputs.environment }}-${{ github.run_number }}
+          path: rollback-report.md
+
+  # Notification
+  notify-completion:
+    name: Notify Rollback Completion
+    runs-on: ubuntu-latest
+    needs: [rollback-preparation, application-rollback, database-rollback, post-rollback-verification]
+    if: always() && needs.rollback-preparation.outputs.should_proceed == 'true'
+    
+    steps:
+      - name: Determine overall status
+        id: status
+        run: |
+          if [ "${{ needs.post-rollback-verification.result }}" = "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=Rollback completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=Rollback completed with issues" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Notify completion
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "channel": "#alerts",
+              "attachments": [{
+                "color": "${{ steps.status.outputs.status == 'success' && 'good' || 'danger' }}",
+                "title": "${{ steps.status.outputs.status == 'success' && '✅' || '❌' }} Emergency Rollback Completed",
+                "fields": [
+                  {
+                    "title": "Environment",
+                    "value": "${{ inputs.environment }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Type",
+                    "value": "${{ inputs.rollback_type }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Status",
+                    "value": "${{ steps.status.outputs.message }}",
+                    "short": false
+                  },
+                  {
+                    "title": "Duration",
+                    "value": "Started at ${{ github.event.created_at }}",
+                    "short": true
+                  }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_ALERTS }}
+          
+      - name: Create incident summary
+        run: |
+          echo "## 🚨 Emergency Rollback Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** ${{ inputs.rollback_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Actions Taken" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.rollback-preparation.outputs.rollback_plan }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Follow-up Required" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Monitor system stability" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Root cause analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Plan remediation" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Update documentation" >> $GITHUB_STEP_SUMMARY

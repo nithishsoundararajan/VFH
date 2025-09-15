@@ -1,0 +1,221 @@
+name: Database Migration
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (staging/production)'
+      migration_action:
+        required: true
+        type: string
+        description: 'Migration action (apply/rollback/validate)'
+      target_version:
+        required: false
+        type: string
+        description: 'Target version for rollback'
+    secrets:
+      SUPABASE_ACCESS_TOKEN:
+        required: true
+      SUPABASE_PROJECT_ID:
+        required: true
+      SLACK_WEBHOOK:
+        required: false
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  database-migration:
+    name: Database Migration - ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Install Supabase CLI
+        run: |
+          curl -fsSL https://supabase.com/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+      - name: Verify Supabase CLI installation
+        run: supabase --version
+        
+      - name: Link to Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          echo "🔗 Linking to Supabase project..."
+          supabase link --project-ref $SUPABASE_PROJECT_ID
+          
+      - name: Validate migrations before execution
+        run: |
+          echo "🔍 Validating migration files..."
+          npm run db:validate
+          
+      - name: Create pre-migration backup
+        if: inputs.migration_action == 'apply' || inputs.migration_action == 'rollback'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "💾 Creating pre-migration backup..."
+          BACKUP_NAME="pre-${{ inputs.migration_action }}-$(date +%Y%m%d_%H%M%S)"
+          npm run db:backup "$BACKUP_NAME"
+          echo "backup_name=$BACKUP_NAME" >> $GITHUB_ENV
+          
+      - name: Check migration status
+        run: |
+          echo "📊 Current migration status:"
+          npm run db:status
+          
+      - name: Apply migrations
+        if: inputs.migration_action == 'apply'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "🔄 Applying database migrations..."
+          npm run db:migrate
+          
+      - name: Rollback migrations
+        if: inputs.migration_action == 'rollback'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "🔄 Rolling back to version ${{ inputs.target_version }}..."
+          npm run db:rollback "${{ inputs.target_version }}"
+          
+      - name: Validate migration integrity
+        if: inputs.migration_action == 'validate'
+        run: |
+          echo "🔍 Validating migration integrity..."
+          npm run db:validate
+          
+      - name: Verify migration results
+        if: inputs.migration_action == 'apply' || inputs.migration_action == 'rollback'
+        run: |
+          echo "✅ Verifying migration results..."
+          npm run db:status
+          
+      - name: Test database connectivity
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "🔌 Testing database connectivity..."
+          node -e "
+            const { createClient } = require('@supabase/supabase-js');
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL,
+              process.env.SUPABASE_SERVICE_ROLE_KEY
+            );
+            
+            supabase.from('profiles').select('count').limit(1)
+              .then(({ data, error }) => {
+                if (error) throw error;
+                console.log('✅ Database connection successful');
+              })
+              .catch(err => {
+                console.error('❌ Database connection failed:', err);
+                process.exit(1);
+              });
+          "
+          
+      - name: Run post-migration tests
+        if: inputs.migration_action == 'apply'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "🧪 Running post-migration tests..."
+          npm run test -- --testPathPattern=database --testTimeout=30000
+          
+      - name: Generate migration report
+        if: always()
+        run: |
+          echo "📋 Generating migration report..."
+          
+          cat > migration-report.md << EOF
+          # Database Migration Report
+          
+          **Environment:** ${{ inputs.environment }}
+          **Action:** ${{ inputs.migration_action }}
+          **Date:** $(date -u)
+          **Commit:** ${{ github.sha }}
+          
+          ## Migration Status
+          
+          \`\`\`
+          $(npm run db:status 2>&1 || echo "Failed to get status")
+          \`\`\`
+          
+          ## Results
+          
+          EOF
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ **Migration completed successfully**" >> migration-report.md
+          else
+            echo "❌ **Migration failed**" >> migration-report.md
+            echo "" >> migration-report.md
+            echo "### Rollback Information" >> migration-report.md
+            echo "Backup created: \`${{ env.backup_name }}\`" >> migration-report.md
+            echo "Use \`npm run db:restore ${{ env.backup_name }}\` to rollback" >> migration-report.md
+          fi
+          
+      - name: Upload migration report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: migration-report-${{ inputs.environment }}-${{ github.run_number }}
+          path: migration-report.md
+          
+      - name: Notify on failure
+        if: failure() && secrets.SLACK_WEBHOOK
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#database-alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          text: |
+            🚨 Database migration failed in ${{ inputs.environment }}
+            
+            **Action:** ${{ inputs.migration_action }}
+            **Environment:** ${{ inputs.environment }}
+            **Backup:** ${{ env.backup_name }}
+            
+            Please check the logs and consider rolling back if necessary.
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          
+      - name: Notify on success
+        if: success() && secrets.SLACK_WEBHOOK
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          text: |
+            ✅ Database migration completed successfully in ${{ inputs.environment }}
+            
+            **Action:** ${{ inputs.migration_action }}
+            **Environment:** ${{ inputs.environment }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

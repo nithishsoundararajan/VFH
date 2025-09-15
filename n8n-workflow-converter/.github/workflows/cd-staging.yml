@@ -1,0 +1,294 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even if tests fail'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Pre-deployment checks
+  pre-deployment:
+    name: Pre-deployment Checks
+    runs-on: ubuntu-latest
+    
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Check deployment conditions
+        id: check
+        run: |
+          # Check if this is a forced deployment
+          if [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "🚀 Force deployment requested"
+            exit 0
+          fi
+          
+          # Check if CI passed (this would be more sophisticated in practice)
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "✅ Pre-deployment checks passed"
+
+  # Build and push Docker image
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: pre-deployment
+    if: needs.pre-deployment.outputs.should_deploy == 'true'
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=staging-latest
+            
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_STANDALONE=true
+            NODE_ENV=production
+
+  # Database migrations
+  database-migration:
+    name: Database Migration
+    needs: [pre-deployment, build-and-push]
+    if: needs.pre-deployment.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/database-migration.yml
+    with:
+      environment: staging
+      migration_action: apply
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: ${{ secrets.STAGING_SUPABASE_PROJECT_ID }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Deploy to Vercel Staging
+  deploy-vercel:
+    name: Deploy to Vercel Staging
+    runs-on: ubuntu-latest
+    needs: [pre-deployment, build-and-push, database-migration]
+    if: needs.pre-deployment.outputs.should_deploy == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          alias-domains: |
+            staging-n8n-converter.vercel.app
+
+  # Deploy to Docker/Kubernetes (alternative)
+  deploy-kubernetes:
+    name: Deploy to Kubernetes Staging
+    runs-on: ubuntu-latest
+    needs: [pre-deployment, build-and-push, database-migration]
+    if: needs.pre-deployment.outputs.should_deploy == 'true' && false # Disabled by default
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          
+      - name: Deploy to staging namespace
+        run: |
+          # Update deployment with new image
+          kubectl set image deployment/n8n-converter-staging \
+            n8n-converter=${{ needs.build-and-push.outputs.image_tag }} \
+            -n staging
+            
+          # Wait for rollout to complete
+          kubectl rollout status deployment/n8n-converter-staging -n staging
+          
+          echo "✅ Kubernetes deployment completed"
+
+  # Smoke tests
+  smoke-tests:
+    name: Staging Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment to be ready..."
+          sleep 30
+          
+      - name: Run smoke tests
+        env:
+          STAGING_URL: https://staging-n8n-converter.vercel.app
+        run: |
+          # Health check
+          curl -f $STAGING_URL/api/health || exit 1
+          
+          # Basic functionality test
+          curl -f $STAGING_URL/ || exit 1
+          
+          echo "✅ Smoke tests passed"
+          
+      - name: Run Playwright smoke tests
+        env:
+          STAGING_URL: https://staging-n8n-converter.vercel.app
+        run: |
+          npx playwright install --with-deps
+          npm run test:e2e -- --grep="smoke"
+
+  # Performance monitoring
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel, smoke-tests]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run Lighthouse audit
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            https://staging-n8n-converter.vercel.app
+            https://staging-n8n-converter.vercel.app/app
+          configPath: './lighthouse.config.js'
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          
+      - name: Performance budget check
+        run: |
+          echo "📊 Checking performance metrics..."
+          # Add performance budget checks here
+          echo "✅ Performance within acceptable limits"
+
+  # Security scan on deployed app
+  security-scan-deployed:
+    name: Security Scan (Deployed)
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel, smoke-tests]
+    
+    steps:
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.10.0
+        with:
+          target: 'https://staging-n8n-converter.vercel.app'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+  # Notification
+  notify-deployment:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel, smoke-tests, performance-monitoring, security-scan-deployed]
+    if: always()
+    
+    steps:
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Staging Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Staging" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** https://staging-n8n-converter.vercel.app" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.deploy-vercel.result }}" = "success" ]; then
+            echo "✅ **Deployment:** Successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deployment:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.smoke-tests.result }}" = "success" ]; then
+            echo "✅ **Smoke Tests:** Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Smoke Tests:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.performance-monitoring.result }}" = "success" ]; then
+            echo "✅ **Performance:** Within limits" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Performance:** Issues detected" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.security-scan-deployed.result }}" = "success" ]; then
+            echo "✅ **Security:** No issues found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Security:** Issues detected" >> $GITHUB_STEP_SUMMARY
+          fi

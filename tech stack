@@ -1,0 +1,124 @@
+
+---
+
+# **Tech Stack Document – n8n Workflow to Standalone Codebase Converter**
+
+**Project Name:** n8n Workflow to Standalone Codebase Converter
+**Prepared By:** \Nithish S
+**Date:**25/08/2025
+**Version:** 1.0
+
+---
+
+## **1. Project Overview**
+
+This project converts n8n workflow JSON files into fully functional standalone Node.js codebases. The generated code executes workflows independently of the n8n runtime, using official n8n packages for node logic.
+
+---
+
+## **2. Frontend Tech Stack**
+
+| Layer            | Technology               | Purpose / Notes                                                                              |
+| ---------------- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| Framework        | React.js                 | Component-based UI for uploading workflows, configuring settings, and monitoring generation. |
+| Styling          | Tailwind CSS             | Utility-first styling for rapid development and responsive design.                           |
+| State Management | React Context or Zustand | Manage app state (uploaded workflow, generation status, configurations).                     |
+| HTTP Client      | Axios / Fetch API        | Communication with backend APIs.                                                             |
+| File Handling    | Browser FileReader API   | Read uploaded JSON files before sending to backend.                                          |
+| Optional         | Electron.js              | Convert web frontend into a desktop app if needed.                                           |
+| Build Tool       | Vite / Create React App  | Compile and serve frontend assets.                                                           |
+
+**Frontend Responsibilities:**
+
+* Upload workflow JSON.
+* Configure environment variables and project settings.
+* Trigger backend code generation.
+* Display logs, progress, and success/failure messages.
+
+---
+
+## **3. Backend Tech Stack**
+
+| Layer                 | Technology                | Purpose / Notes                                    |
+| --------------------- | ------------------------- | -------------------------------------------------- |
+| Runtime               | Node.js (v20+)            | Backend environment.                               |
+| Server Framework      | Express.js                | RESTful API for frontend integration.              |
+| Workflow Engine       | n8n-core, n8n-workflow    | Use official n8n packages for node execution.      |
+| File System           | Node.js `fs` module       | Read/write files, create project directories.      |
+| Environment Variables | dotenv                    | Securely store API keys, credentials, and configs. |
+| Logging               | Winston / Custom Logger   | Track generation progress and errors.              |
+| JSON Validation       | AJV / Built-in validation | Validate workflow JSON files.                      |
+
+**Backend Responsibilities:**
+
+* Parse workflow JSON.
+* Map nodes to n8n package implementations.
+* Generate standalone Node.js projects.
+* Execute triggers and workflows in correct order.
+* Provide API endpoints for frontend integration.
+
+---
+
+## **4. Project Folder Structure**
+
+```
+project-root/
+├── frontend/           # React frontend
+│   ├── src/
+│   └── package.json
+├── backend/            # Node.js backend
+│   ├── src/
+│   │   ├── controllers/
+│   │   ├── services/
+│   │   ├── routes/
+│   │   ├── utils/
+│   │   └── config/
+│   ├── generated_projects/
+│   ├── app.js
+│   └── package.json
+├── README.md
+└── package.json        # optional monorepo root
+```
+
+---
+
+## **5. API Endpoints**
+
+| Endpoint                | Method | Purpose                                |
+| ----------------------- | ------ | -------------------------------------- |
+| `/upload`               | POST   | Upload workflow JSON.                  |
+| `/generate`             | POST   | Generate standalone codebase.          |
+| `/status/:workflowId`   | GET    | Fetch generation status/logs.          |
+| `/download/:workflowId` | GET    | Download generated project (optional). |
+
+---
+
+## **6. Security Considerations**
+
+* Validate JSON uploads to prevent malicious code execution.
+* Keep credentials and API keys in environment variables, never hardcode.
+* Restrict access to generated projects folder.
+* Sanitize logs to prevent exposure of sensitive data.
+
+---
+
+## **7. DevOps / Deployment Tools**
+
+| Tool                   | Purpose                               |
+| ---------------------- | ------------------------------------- |
+| Git / GitHub           | Source control and versioning.        |
+| Node.js/npm            | Package management and runtime.       |
+| Docker (optional)      | Containerization for reproducibility. |
+| Vite / CRA             | Frontend build & development server.  |
+| CI/CD (GitHub Actions) | Automated testing and deployment.     |
+
+---
+
+## **8. Future Enhancements**
+
+* Electron desktop app integration.
+* Batch workflow conversion.
+* Advanced logging, monitoring, and error retries.
+* Cloud storage integration for generated projects.
+
+---

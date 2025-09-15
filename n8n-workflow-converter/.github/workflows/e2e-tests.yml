@@ -1,0 +1,231 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+        test-suite: [complete-workflow, collaboration, error-handling, performance]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Setup test environment
+        run: |
+          cp .env.example .env.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.TEST_SUPABASE_URL }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.TEST_SUPABASE_ANON_KEY }}" >> .env.local
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run E2E tests
+        run: npx playwright test src/__tests__/e2e/${{ matrix.test-suite }}.test.ts --project=${{ matrix.browser }}
+        env:
+          TEST_BASE_URL: http://localhost:3000
+          CI: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.browser }}-${{ matrix.test-suite }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 30
+
+      - name: Upload screenshots on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshots-${{ matrix.browser }}-${{ matrix.test-suite }}
+          path: test-results/screenshots/
+          retention-days: 7
+
+  comprehensive-tests:
+    name: Comprehensive Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    needs: e2e-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Setup test environment
+        run: |
+          cp .env.example .env.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.TEST_SUPABASE_URL }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.TEST_SUPABASE_ANON_KEY }}" >> .env.local
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run comprehensive test suite
+        run: npm run test:e2e:all
+        env:
+          TEST_BASE_URL: http://localhost:3000
+          CI: true
+
+      - name: Generate test report
+        run: |
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Summary" >> $GITHUB_STEP_SUMMARY
+          if [ -f "test-results/e2e-report.json" ]; then
+            node -e "
+              const report = JSON.parse(require('fs').readFileSync('test-results/e2e-report.json', 'utf8'));
+              console.log(\`- **Total Tests**: \${report.summary.totalPassed + report.summary.totalFailed + report.summary.totalSkipped}\`);
+              console.log(\`- **Passed**: \${report.summary.totalPassed}\`);
+              console.log(\`- **Failed**: \${report.summary.totalFailed}\`);
+              console.log(\`- **Skipped**: \${report.summary.totalSkipped}\`);
+              console.log(\`- **Duration**: \${(report.summary.totalDuration / 1000).toFixed(2)}s\`);
+              console.log(\`- **Success Rate**: \${((report.summary.totalPassed / (report.summary.totalPassed + report.summary.totalFailed)) * 100).toFixed(1)}%\`);
+            " >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload comprehensive test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: comprehensive-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 90
+
+  smoke-tests:
+    name: Smoke Tests (Production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke tests against production
+        run: npx playwright test src/__tests__/e2e/complete-workflow.test.ts --project=chromium --grep="should complete full workflow"
+        env:
+          TEST_BASE_URL: ${{ secrets.PRODUCTION_URL }}
+          CI: true
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Production Smoke Tests Failed',
+              body: `Production smoke tests failed on ${new Date().toISOString()}.\n\nPlease investigate the production environment.`,
+              labels: ['bug', 'production', 'urgent']
+            });
+
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Setup test environment
+        run: |
+          cp .env.example .env.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.TEST_SUPABASE_URL }}" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.TEST_SUPABASE_ANON_KEY }}" >> .env.local
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run performance tests
+        run: npx playwright test src/__tests__/e2e/performance.test.ts --project=chromium
+        env:
+          TEST_BASE_URL: http://localhost:3000
+          CI: true
+
+      - name: Extract performance metrics
+        run: |
+          if [ -f "test-results/e2e-report.json" ]; then
+            echo "## Performance Metrics" >> $GITHUB_STEP_SUMMARY
+            echo "Performance test results have been recorded." >> $GITHUB_STEP_SUMMARY
+            echo "Check the test artifacts for detailed performance data." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 30

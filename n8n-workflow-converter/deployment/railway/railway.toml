@@ -1,0 +1,52 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[[services]]
+name = "web"
+
+[services.web]
+source = "."
+build = { builder = "NIXPACKS" }
+
+[services.web.variables]
+NODE_ENV = "production"
+PORT = "3000"
+RAILWAY_STATIC_URL = "https://${{RAILWAY_STATIC_URL}}"
+
+# Database service (PostgreSQL)
+[[services]]
+name = "database"
+
+[services.database]
+source = "postgres:15"
+
+[services.database.variables]
+POSTGRES_DB = "n8n_converter"
+POSTGRES_USER = "postgres"
+POSTGRES_PASSWORD = "${{POSTGRES_PASSWORD}}"
+
+# Redis service (for caching)
+[[services]]
+name = "redis"
+
+[services.redis]
+source = "redis:7-alpine"
+
+# Environment variables
+[environments.production.variables]
+NODE_ENV = "production"
+DATABASE_URL = "${{DATABASE_PRIVATE_URL}}"
+REDIS_URL = "${{REDIS_PRIVATE_URL}}"
+
+[environments.staging.variables]
+NODE_ENV = "staging"
+DATABASE_URL = "${{DATABASE_PRIVATE_URL}}"
+REDIS_URL = "${{REDIS_PRIVATE_URL}}"

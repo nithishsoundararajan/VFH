@@ -1,0 +1,106 @@
+MIT License
+
+Copyright (c) 2024 n8n Workflow Converter
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+THIRD-PARTY LICENSES AND ATTRIBUTIONS
+
+This software incorporates components from the following open source projects:
+
+n8n - Workflow Automation Tool
+License: Apache License 2.0
+Copyright: n8n GmbH
+Website: https://n8n.io/
+Repository: https://github.com/n8n-io/n8n
+
+The following n8n packages are used in this project:
+- n8n-core: Core n8n functionality for workflow execution
+- n8n-workflow: Workflow parsing and execution logic
+- n8n-nodes-base: Standard node implementations
+
+These packages are used under the Apache License 2.0. The full text of the
+Apache License 2.0 can be found at:
+https://www.apache.org/licenses/LICENSE-2.0
+
+Supabase
+License: Apache License 2.0
+Copyright: Supabase Inc.
+Website: https://supabase.com/
+Repository: https://github.com/supabase/supabase
+
+Next.js
+License: MIT License
+Copyright: Vercel, Inc.
+Website: https://nextjs.org/
+Repository: https://github.com/vercel/next.js
+
+React
+License: MIT License
+Copyright: Meta Platforms, Inc. and affiliates
+Website: https://reactjs.org/
+Repository: https://github.com/facebook/react
+
+TypeScript
+License: Apache License 2.0
+Copyright: Microsoft Corporation
+Website: https://www.typescriptlang.org/
+Repository: https://github.com/microsoft/TypeScript
+
+Tailwind CSS
+License: MIT License
+Copyright: Tailwind Labs Inc.
+Website: https://tailwindcss.com/
+Repository: https://github.com/tailwindlabs/tailwindcss
+
+For a complete list of all dependencies and their licenses, see the
+THIRD-PARTY-LICENSES.md file in this repository.
+
+================================================================================
+
+ATTRIBUTION REQUIREMENTS
+
+When using this software or distributing derivative works, you must:
+
+1. Include this license file in all copies or substantial portions of the software
+2. Provide proper attribution to n8n and other third-party components
+3. Include the copyright notices for all incorporated open source components
+4. Comply with the license terms of all third-party dependencies
+
+For generated Node.js projects, the following attribution must be included
+in the README.md file:
+
+"This project was generated using the n8n Workflow Converter, which leverages
+official n8n packages. Special thanks to the n8n team for their excellent
+automation platform. Learn more at https://n8n.io/"
+
+================================================================================
+
+DISCLAIMER
+
+This software is not officially affiliated with, endorsed by, or sponsored by
+n8n GmbH. The n8n name and logo are trademarks of n8n GmbH. This project is
+an independent tool that uses publicly available n8n packages to provide
+workflow conversion functionality.
+
+The use of n8n packages in this project is in accordance with their respective
+open source licenses. Users of this software are responsible for ensuring
+compliance with all applicable licenses and terms of service.
