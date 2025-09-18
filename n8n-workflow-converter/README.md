@@ -2,6 +2,23 @@
 
 A comprehensive web application that converts n8n workflows (exported as JSON) into fully functional, standalone Node.js projects that can execute without requiring the n8n runtime. Built with modern web technologies and enterprise-grade security.
 
+## ⚡ Quick Start
+
+Get up and running in 2 minutes:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd n8n-workflow-converter
+
+# One-command deployment
+npm run quick-deploy:start
+```
+
+That's it! The app will be running at `http://localhost:3000`
+
+For production deployment, see our [Quick Deployment Guide](./docs/QUICK-DEPLOYMENT.md).
+
 ## 🚀 Features
 
 ### Core Functionality
