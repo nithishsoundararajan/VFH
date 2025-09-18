@@ -1,6 +1,6 @@
 # VFH Development Workspace
 
-This repository contains the complete development workspace for the VFH (Visual Flow Hub) project ecosystem, including the n8n Workflow Converter and related tools.
+This repository contains the complete development workspace for the VFH (Value For Human) project ecosystem, including the n8n Workflow Converter and related tools.
 
 ## 🚀 Projects
 
